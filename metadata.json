@@ -1,0 +1,6 @@
+{
+  "name": "Saucer GP",
+  "description": "High-speed 3D anti-gravity UFO racing across sunlit canyon circuits with plasma boost, hover hops, and rival alien pilots.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
