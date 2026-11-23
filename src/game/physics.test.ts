@@ -462,4 +462,149 @@ test('different levels spawn different UFO archetypes, and updrafts & warp tunne
   assert.ok(player6.styleScore >= 200, 'warp tunnel should award +200 style points');
 });
 
+test('Level 1 Easy AI is courteous, does not boost while ahead, and lets a steady player lead cleanly', () => {
+  const lv1 = getLevelDefinition(1);
+  const track = buildBakedTrack(CIRCUITS[lv1.circuitId], 600);
+  const racers = createInitialRacers(track, lv1, 'race');
+  const player = racers[0];
+  const rival = racers[1];
+
+  // Rival slightly ahead of player should never fire boost on Easy Level 1
+  rival.totalProgress = 0.25;
+  rival.boostEnergy = 100;
+  rival.aiBoostBurstTimer = 0.5;
+  const aheadInput = computeAiInput(rival, racers, track, 8.0, 0.05, 0.20, lv1);
+  assert.equal(aheadInput.boostHeld, false, 'Easy AI should not boost while ahead of player');
+
+  // Rival closely alongside/ahead of player should gently yield laterally
+  player.t = 0.10;
+  player.lateral = 0;
+  rival.t = 0.103;
+  rival.lateral = 2.0;
+  rival.aiDecisionTimer = 0.5;
+  computeAiInput(rival, racers, track, 8.0, 0.05, player.totalProgress, lv1);
+  assert.ok(
+    rival.aiTargetLane > 6.5,
+    `Easy AI close to player should yield laterally (targetLane=${rival.aiTargetLane.toFixed(1)})`,
+  );
+
+  // Over 6 seconds of steady driving, player should clearly outpace Easy Level 1 rivals
+  const freshRacers = createInitialRacers(track, lv1, 'race');
+  const collected = new Set<string>();
+  const events: PhysicsEvent[] = [];
+  for (let step = 0; step < 120; step++) {
+    const tSec = step * 0.05;
+    stepRacerPhysics(
+      freshRacers[0],
+      { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+      track,
+      tSec,
+      0.05,
+      collected,
+      events,
+      lv1,
+    );
+    for (let i = 1; i < freshRacers.length; i++) {
+      const aiIn = computeAiInput(
+        freshRacers[i],
+        freshRacers,
+        track,
+        tSec,
+        0.05,
+        freshRacers[0].totalProgress,
+        lv1,
+      );
+      stepRacerPhysics(freshRacers[i], aiIn, track, tSec, 0.05, collected, events, lv1);
+    }
+  }
+  const fastestRival = Math.max(...freshRacers.slice(1).map((r) => r.totalProgress));
+  assert.ok(
+    freshRacers[0].totalProgress > fastestRival,
+    `steady player (${freshRacers[0].totalProgress.toFixed(4)}) should lead Easy Lv1 rivals (${fastestRival.toFixed(4)})`,
+  );
+});
+
+test('Level 1 Solar Pinball Bumpers, Sandstone Pillars, and Slingshot Turbo Gates trigger fun rewards & smooth deflections', () => {
+  const lv1 = getLevelDefinition(1);
+  const track = buildBakedTrack(CIRCUITS['solar-canyon'], 600);
+  const [player] = createInitialRacers(track, lv1, 'race');
+  const collected = new Set<string>();
+
+  // 1. Solar Pinball Bumper Orb -> playful bounce + +100 pts + +15% boost
+  const bumper = track.def.obstacles?.find((o) => o.kind === 'bumper-orb');
+  assert.ok(bumper, 'solar-canyon should include Pinball Bumper Orbs');
+  const evBumper: PhysicsEvent[] = [];
+  player.t = bumper.t - 0.0002;
+  player.lateral = bumper.lateral + 1.5;
+  player.speed = 64;
+  player.boostEnergy = 40;
+  player.styleScore = 0;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    2.0,
+    0.05,
+    collected,
+    evBumper,
+    lv1,
+  );
+  assert.ok(evBumper.some((e) => e.type === 'bumper-bounce'), 'hitting bumper-orb should emit bumper-bounce');
+  assert.ok(player.styleScore >= 100, 'pinball bounce should award +100 style points');
+  assert.ok(player.boostEnergy >= 54, 'pinball bounce should recharge boost by +15%');
+  assert.ok(player.lateralVel > 8, 'pinball bounce should ricochet smoothly away from orb');
+
+  // 2. Sandstone Split-Pillar -> smooth lateral deflection without stopping dead
+  const pillar = track.def.obstacles?.find((o) => o.kind === 'rock-pillar');
+  assert.ok(pillar, 'solar-canyon should include Sandstone Split-Pillars');
+  const evPillar: PhysicsEvent[] = [];
+  player.t = pillar.t - 0.0002;
+  player.lateral = pillar.lateral + 2.0;
+  player.lateralVel = 0;
+  player.speed = 70;
+  player.bumpCooldown = 0;
+  player.hoverY = 0;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    4.0,
+    0.05,
+    collected,
+    evPillar,
+    lv1,
+  );
+  assert.ok(evPillar.some((e) => e.type === 'obstacle-hit'), 'clipping rock-pillar should emit obstacle-hit');
+  assert.ok(player.speed > 50, 'rock-pillar clip should deflect smoothly without hard-stopping');
+  assert.ok(player.lateral > pillar.lateral + 2.0, 'rock-pillar should push craft cleanly outward');
+
+  // 3. Floating Slingshot Turbo Gate -> +180 pts + +32% boost + speed surge
+  const gate = track.def.speedGates?.[0];
+  assert.ok(gate, 'solar-canyon should include Floating Slingshot Turbo Gates');
+  const evGate: PhysicsEvent[] = [];
+  player.t = gate.t - 0.0003;
+  player.lateral = gate.lateral;
+  player.hoverY = Math.max(0, gate.heightOffset - PHYSICS_CONSTANTS.baseHoverHeight);
+  player.vy = 0;
+  player.speed = 66;
+  player.boostEnergy = 35;
+  player.styleScore = 0;
+  player.gateCooldown = 0;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    6.0,
+    0.05,
+    collected,
+    evGate,
+    lv1,
+  );
+  assert.ok(evGate.some((e) => e.type === 'slingshot-gate'), 'flying through speedGate should emit slingshot-gate');
+  assert.ok(player.styleScore >= 180, 'slingshot gate should award +180 style points');
+  assert.ok(player.boostEnergy >= 65, 'slingshot gate should recharge boost by +32%');
+  assert.ok(player.speed > 86, `slingshot gate should surge speed (got ${player.speed.toFixed(1)})`);
+});
+
+
 

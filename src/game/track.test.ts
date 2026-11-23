@@ -81,3 +81,77 @@ test('buildBakedTrack produces massive closed continuous orthonormal frames for 
     assert.ok(mm.x >= 0 && mm.x <= 1 && mm.y >= 0 && mm.y <= 1);
   }
 });
+
+test('Level 1 solar-canyon is a massive 5-zone loop with diverse terrain, safe obstacle clearance, and zero overlap with boosters/ramps', () => {
+  const def = CIRCUITS['solar-canyon'];
+  const track = buildBakedTrack(def, 600);
+
+  assert.ok(
+    track.totalLength > 2800,
+    `Level 1 solar-canyon should exceed 2,800m (got ${track.totalLength.toFixed(0)}m)`,
+  );
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minW = Infinity;
+  let maxW = -Infinity;
+  for (const f of track.frames) {
+    minY = Math.min(minY, f.pos.y);
+    maxY = Math.max(maxY, f.pos.y);
+    minW = Math.min(minW, f.width);
+    maxW = Math.max(maxW, f.width);
+  }
+  assert.ok(
+    maxY - minY >= 30,
+    `Level 1 elevation relief should be >= 30m (got ${(maxY - minY).toFixed(1)}m)`,
+  );
+  assert.ok(
+    maxW - minW >= 20,
+    `Level 1 road width diversity should be >= 20m (got ${(maxW - minW).toFixed(1)}m)`,
+  );
+  assert.ok(def.boostPads.length >= 8, 'Level 1 should feature strategic boost pad chains');
+  assert.ok((def.obstacles?.length ?? 0) >= 6, 'Level 1 should feature diverse track obstacles');
+  assert.ok((def.speedGates?.length ?? 0) >= 4, 'Level 1 should feature floating Slingshot Turbo Gates');
+
+  const kinds = new Set((def.obstacles ?? []).map((o) => o.kind));
+  assert.ok(kinds.has('rock-pillar') && kinds.has('hover-drone') && kinds.has('bumper-orb'));
+
+  for (const ob of def.obstacles ?? []) {
+    assert.ok(ob.t > 0.04 && ob.t < 0.96, `obstacle ${ob.id} should stay clear of start/finish straight`);
+    const f = sampleTrackFrame(track, ob.t);
+    const halfW = f.width * 0.5;
+    const leftClearance = halfW + (ob.lateral - ob.radius);
+    const rightClearance = halfW - (ob.lateral + ob.radius);
+    assert.ok(
+      Math.max(leftClearance, rightClearance) >= 12,
+      `obstacle ${ob.id} should always leave >= 12m open passing lane (L=${leftClearance.toFixed(1)}, R=${rightClearance.toFixed(1)})`,
+    );
+
+    // Verify no overlap with boost pads, jump ramps, or updrafts
+    for (const pad of def.boostPads) {
+      const distM = Math.abs(shortestProgressDelta(ob.t, pad.t)) * track.totalLength;
+      const latM = Math.abs(ob.lateral - pad.lateral);
+      assert.ok(
+        distM > pad.length * 0.5 + ob.radius + 4 || latM > pad.width * 0.5 + ob.radius + 2,
+        `obstacle ${ob.id} should not overlap boost pad ${pad.id}`,
+      );
+    }
+    for (const ramp of def.jumpRamps) {
+      const distM = Math.abs(shortestProgressDelta(ob.t, ramp.t)) * track.totalLength;
+      const latM = Math.abs(ob.lateral - ramp.lateral);
+      assert.ok(
+        distM > ramp.length * 0.5 + ob.radius + 4 || latM > ramp.width * 0.5 + ob.radius + 2,
+        `obstacle ${ob.id} should not overlap jump ramp ${ramp.id}`,
+      );
+    }
+    for (const ud of def.updrafts) {
+      const distM = Math.abs(shortestProgressDelta(ob.t, ud.t)) * track.totalLength;
+      const latM = Math.abs(ob.lateral - ud.lateral);
+      assert.ok(
+        distM > ud.radius + ob.radius + 4 || latM > ud.radius + ob.radius + 2,
+        `obstacle ${ob.id} should not overlap updraft ${ud.id}`,
+      );
+    }
+  }
+});
+

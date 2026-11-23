@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { BakedTrack } from './track';
 import { sampleTrackFrame, trackToWorld } from './track';
-import type { BiomeTheme, RacerConfig, ShockHazardDef } from './types';
+import type { BiomeTheme, RacerConfig, ShockHazardDef, TrackObstacleDef } from './types';
 
 export interface UfoVisualRig {
   root: THREE.Group;
@@ -69,6 +69,24 @@ export interface FloatingPropVisual {
   bobAmp: number;
   bobSpeed: number;
   rotSpeed: number;
+}
+
+export interface ObstacleVisual {
+  id: string;
+  kind: TrackObstacleDef['kind'];
+  group: THREE.Group;
+  spinPart: THREE.Object3D | null;
+  pulsePart: THREE.Object3D | null;
+  basePos: THREE.Vector3;
+  rightVec: THREE.Vector3;
+  baseLateral: number;
+  def: TrackObstacleDef;
+}
+
+export interface SpeedGateVisual {
+  id: string;
+  group: THREE.Group;
+  spinRing: THREE.Group;
 }
 
 export function createTrackTextures(
@@ -921,7 +939,7 @@ export function createStartLineTexture(maxAnisotropy: number): THREE.CanvasTextu
  * Builds a sky gradient dome that matches the circuit horizon & fog color seamlessly.
  */
 export function buildSkyDome(topColorHex: string, horizonColorHex: string): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(1850, 28, 18);
+  const geo = new THREE.SphereGeometry(2250, 28, 18);
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
   const topCol = new THREE.Color(topColorHex);
@@ -931,7 +949,7 @@ export function buildSkyDome(topColorHex: string, horizonColorHex: string): THRE
 
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i);
-    const h = THREE.MathUtils.clamp(y / 960, 0, 1);
+    const h = THREE.MathUtils.clamp(y / 1150, 0, 1);
     if (h < 0.32) {
       tmp.copy(horCol).lerp(midCol, h / 0.32);
     } else {
@@ -2513,8 +2531,8 @@ export function buildCanyonEnvironment(
     };
   };
 
-  // Massive planetary heightfield (2600m x 2600m extends cleanly to horizon fog)
-  const terrainGeo = new THREE.PlaneGeometry(2600, 2600, 92, 92);
+  // Massive planetary heightfield (3200m x 3200m extends cleanly to horizon fog even on 3.5km+ circuits)
+  const terrainGeo = new THREE.PlaneGeometry(3200, 3200, 96, 96);
   terrainGeo.rotateX(-Math.PI / 2);
   const pos = terrainGeo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
@@ -2523,11 +2541,11 @@ export function buildCanyonEnvironment(
     const { dist, trackY, halfWidth } = nearestTrackInfo(x, z);
 
     const rawNoise =
-      Math.sin(x * 0.009) * Math.cos(z * 0.0085) * 18 +
-      Math.sin(x * 0.024 + z * 0.019) * 8;
-    const clearEdge = halfWidth + 16;
-    const mesaRamp = THREE.MathUtils.smoothstep(dist, clearEdge, clearEdge + 160);
-    const outerRim = THREE.MathUtils.smoothstep(Math.hypot(x, z), 540, 1060) * 88;
+      Math.sin(x * 0.0085) * Math.cos(z * 0.008) * 18 +
+      Math.sin(x * 0.022 + z * 0.018) * 8;
+    const clearEdge = halfWidth + 18;
+    const mesaRamp = THREE.MathUtils.smoothstep(dist, clearEdge, clearEdge + 175);
+    const outerRim = THREE.MathUtils.smoothstep(Math.hypot(x, z), 780, 1420) * 105;
 
     let y =
       biome === 'cybercity'
@@ -2540,10 +2558,19 @@ export function buildCanyonEnvironment(
         ? -16 + mesaRamp * (52 + rawNoise * 1.15) + outerRim * 1.15
         : biome === 'biolume'
         ? -18 + mesaRamp * (34 + rawNoise * 0.9) + outerRim * 0.78
+        : biome === 'canyon'
+        ? -14 + mesaRamp * (44 + rawNoise) + outerRim * 0.95
         : -14 + mesaRamp * (40 + rawNoise) + outerRim;
 
+    // Carve natural turquoise Desert Oasis river valley beneath Zone 3 on Solar Canyon!
+    if (biome === 'canyon' && x > 300 && x < 790 && z > -210 && z < 280) {
+      const oasisCenterDist = Math.hypot((x - 535) * 0.85, (z - 45) * 0.68);
+      const riverBowl = 1 - THREE.MathUtils.smoothstep(oasisCenterDist, 85, 215);
+      y = THREE.MathUtils.lerp(y, -11.5, riverBowl);
+    }
+
     // Hard safety clearance beneath even the widest 58m sky-plaza & Figure-8 underpasses
-    if (dist < halfWidth + 26) {
+    if (dist < halfWidth + 28) {
       y = Math.min(y, trackY - 9.5);
     }
     pos.setY(i, y);
@@ -2598,7 +2625,335 @@ export function buildCanyonEnvironment(
   const dummy = new THREE.Object3D();
 
   // Creative Biome Landmarks!
-  if (biome === 'biolume') {
+  if (biome === 'canyon') {
+    // 1. Golden-Hour Sun Disc & Warm Atmospheric Halo on the canyon horizon
+    const sunGroup = new THREE.Group();
+    const sunCore = new THREE.Mesh(
+      new THREE.CircleGeometry(110, 28),
+      new THREE.MeshBasicMaterial({ color: 0xfff3cc, fog: false }),
+    );
+    const sunHalo = new THREE.Mesh(
+      new THREE.CircleGeometry(210, 28),
+      new THREE.MeshBasicMaterial({
+        color: 0xffb35c,
+        transparent: true,
+        opacity: 0.34,
+        fog: false,
+        depthWrite: false,
+      }),
+    );
+    sunHalo.position.z = -1;
+    sunGroup.add(sunCore, sunHalo);
+    sunGroup.position.set(290, 330, -1420);
+    sunGroup.lookAt(0, 40, 0);
+    env.add(sunGroup);
+
+    // 2. Three-Tier Stratified Terracotta Mesa Buttes (Base Cliff + Middle Stratum + Sunlit Cap)
+    const baseMesaGeo = new THREE.CylinderGeometry(11.5, 17.5, 22, 8);
+    baseMesaGeo.translate(0, 11, 0);
+    const midMesaGeo = new THREE.CylinderGeometry(9.0, 11.8, 17, 8);
+    midMesaGeo.translate(0, 30, 0);
+    const capMesaGeo = new THREE.CylinderGeometry(8.2, 9.5, 7, 8);
+    capMesaGeo.translate(0, 41.5, 0);
+
+    const baseMesaMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.88,
+      metalness: 0.05,
+      flatShading: true,
+    });
+    const midMesaMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.84,
+      metalness: 0.05,
+      flatShading: true,
+    });
+    const capMesaMat = new THREE.MeshStandardMaterial({
+      color: 0xe6a167,
+      roughness: 0.78,
+      metalness: 0.06,
+      flatShading: true,
+    });
+
+    const mesas: Array<{
+      x: number;
+      z: number;
+      sx: number;
+      sy: number;
+      sz: number;
+      rot: number;
+      baseCol: THREE.Color;
+      midCol: THREE.Color;
+    }> = [];
+    const terracotta = new THREE.Color('#b65336');
+    const ochre = new THREE.Color('#d8804a');
+    const umber = new THREE.Color('#863a29');
+
+    for (let attempt = 0; attempt < 620 && mesas.length < 118; attempt++) {
+      const angle = rand() * Math.PI * 2;
+      const radius = 110 + rand() * 1040;
+      const x = 180 + Math.cos(angle) * radius;
+      const z = 40 + Math.sin(angle) * radius;
+      const { dist, halfWidth } = nearestTrackInfo(x, z);
+      if (dist < halfWidth + 48) continue;
+      // Keep the opening launch vista & turquoise Oasis River basin clear of close blocking cliffs
+      if (x > -120 && x < 165 && z > -360 && z < 80) continue;
+      if (x > 370 && x < 700 && z > -130 && z < 210) continue;
+
+      const sx = 0.85 + rand() * 2.25;
+      const sy = 0.8 + rand() * 2.4;
+      const sz = 0.85 + rand() * 2.25;
+      mesas.push({
+        x,
+        z,
+        sx,
+        sy,
+        sz,
+        rot: rand() * Math.PI * 2,
+        baseCol: umber.clone().lerp(terracotta, rand() * 0.8),
+        midCol: terracotta.clone().lerp(ochre, 0.35 + rand() * 0.65),
+      });
+    }
+
+    const baseInst = new THREE.InstancedMesh(baseMesaGeo, baseMesaMat, mesas.length);
+    const midInst = new THREE.InstancedMesh(midMesaGeo, midMesaMat, mesas.length);
+    const capInst = new THREE.InstancedMesh(capMesaGeo, capMesaMat, mesas.length);
+    mesas.forEach((m, idx) => {
+      dummy.position.set(m.x, -16, m.z);
+      dummy.rotation.set(0, m.rot, 0);
+      dummy.scale.set(m.sx, m.sy, m.sz);
+      dummy.updateMatrix();
+      baseInst.setMatrixAt(idx, dummy.matrix);
+      baseInst.setColorAt(idx, m.baseCol);
+      midInst.setMatrixAt(idx, dummy.matrix);
+      midInst.setColorAt(idx, m.midCol);
+      capInst.setMatrixAt(idx, dummy.matrix);
+    });
+    baseInst.instanceMatrix.needsUpdate = true;
+    midInst.instanceMatrix.needsUpdate = true;
+    capInst.instanceMatrix.needsUpdate = true;
+    if (baseInst.instanceColor) baseInst.instanceColor.needsUpdate = true;
+    if (midInst.instanceColor) midInst.instanceColor.needsUpdate = true;
+    baseInst.computeBoundingSphere();
+    midInst.computeBoundingSphere();
+    capInst.computeBoundingSphere();
+    env.add(baseInst, midInst, capInst);
+
+    // 3. Shimmering Turquoise Desert Oasis Canyon River & Lagoon beneath Zone 3!
+    const oasisWaterMat = new THREE.MeshPhysicalMaterial({
+      color: 0x18c4be,
+      emissive: 0x0a5d66,
+      emissiveIntensity: 0.35,
+      roughness: 0.14,
+      metalness: 0.12,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.08,
+      transparent: true,
+      opacity: 0.88,
+    });
+    const oasisLagoon = new THREE.Mesh(new THREE.CircleGeometry(175, 32), oasisWaterMat);
+    oasisLagoon.rotation.x = -Math.PI / 2;
+    oasisLagoon.scale.set(0.95, 1.38, 1);
+    oasisLagoon.position.set(535, -7.2, 48);
+    env.add(oasisLagoon);
+
+    // Sandy turquoise shoreline ring framing the Oasis River
+    const shoreRing = new THREE.Mesh(
+      new THREE.RingGeometry(165, 205, 32),
+      new THREE.MeshStandardMaterial({ color: 0xe6c38d, roughness: 0.92, metalness: 0.02 }),
+    );
+    shoreRing.rotation.x = -Math.PI / 2;
+    shoreRing.scale.set(0.95, 1.38, 1);
+    shoreRing.position.set(535, -7.35, 48);
+    env.add(shoreRing);
+
+    // 4. Instanced Desert Saguaro Cacti & Oasis Palms along canyon floor & oasis banks!
+    const palmPositions: Array<{ x: number; y: number; z: number; s: number; rot: number }> = [];
+    for (let i = 0; i < 42; i++) {
+      const ang = (i / 42) * Math.PI * 2 + rand() * 0.12;
+      const r = 135 + rand() * 72;
+      const px = 535 + Math.cos(ang) * r * 0.92;
+      const pz = 48 + Math.sin(ang) * r * 1.3;
+      const { dist, halfWidth } = nearestTrackInfo(px, pz);
+      if (dist < halfWidth + 14) continue;
+      palmPositions.push({ x: px, y: -7.5, z: pz, s: 0.9 + rand() * 0.7, rot: rand() * Math.PI * 2 });
+    }
+    if (palmPositions.length > 0) {
+      const trunkGeo = new THREE.CylinderGeometry(0.45, 0.95, 13, 6);
+      trunkGeo.translate(0, 6.5, 0);
+      const canopyGeo = new THREE.ConeGeometry(5.2, 3.8, 7);
+      canopyGeo.translate(0, 13.5, 0);
+      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x7c5338, roughness: 0.9 });
+      const frondMat = new THREE.MeshStandardMaterial({ color: 0x2c945c, roughness: 0.72, flatShading: true });
+      const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, palmPositions.length);
+      const frondInst = new THREE.InstancedMesh(canopyGeo, frondMat, palmPositions.length);
+      palmPositions.forEach((p, idx) => {
+        dummy.position.set(p.x, p.y, p.z);
+        dummy.rotation.set(0.06, p.rot, 0.05);
+        dummy.scale.setScalar(p.s);
+        dummy.updateMatrix();
+        trunkInst.setMatrixAt(idx, dummy.matrix);
+        frondInst.setMatrixAt(idx, dummy.matrix);
+      });
+      trunkInst.instanceMatrix.needsUpdate = true;
+      frondInst.instanceMatrix.needsUpdate = true;
+      trunkInst.computeBoundingSphere();
+      frondInst.computeBoundingSphere();
+      env.add(trunkInst, frondInst);
+    }
+
+    // 5. Giant Solar Heliostat Collector Towers (Sun-Core Power Towers + Angled Solar Mirror Panels!)
+    const towerSpots = [
+      { t: 0.052, side: 1, off: 44 },
+      { t: 0.23, side: -1, off: 64 },
+      { t: 0.56, side: 1, off: 56 },
+      { t: 0.66, side: -1, off: 58 },
+      { t: 0.86, side: 1, off: 62 },
+    ];
+    const towerConcreteMat = new THREE.MeshStandardMaterial({
+      color: 0xeae2d6,
+      roughness: 0.45,
+      metalness: 0.28,
+    });
+    const towerDarkMat = new THREE.MeshStandardMaterial({
+      color: 0x262c3d,
+      roughness: 0.48,
+      metalness: 0.75,
+    });
+    const solarCoreMat = new THREE.MeshBasicMaterial({ color: 0xfff0a6 });
+    const solarRingMat = new THREE.MeshStandardMaterial({
+      color: 0x2df9f2,
+      emissive: 0x0ec7c7,
+      emissiveIntensity: 1.4,
+      roughness: 0.25,
+    });
+    const mirrorPanelMat = new THREE.MeshStandardMaterial({
+      color: 0x1d4e78,
+      roughness: 0.14,
+      metalness: 0.88,
+    });
+    const mirrorPanelGeo = new THREE.BoxGeometry(9.5, 0.45, 6.5);
+
+    const mirrorPositions: Array<{ x: number; y: number; z: number; yaw: number }> = [];
+    for (const spot of towerSpots) {
+      const f = sampleTrackFrame(track, spot.t);
+      const tx = f.pos.x + f.right.x * (f.width * 0.5 + spot.off) * spot.side;
+      const tz = f.pos.z + f.right.z * (f.width * 0.5 + spot.off) * spot.side;
+      const ty = Math.max(-12, f.pos.y - 26);
+
+      const tower = new THREE.Group();
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 6.2, 68, 8), towerConcreteMat);
+      shaft.position.y = 34;
+      tower.add(shaft);
+
+      const collar = new THREE.Mesh(new THREE.CylinderGeometry(5.6, 4.4, 5.5, 8), towerDarkMat);
+      collar.position.y = 68;
+      tower.add(collar);
+
+      const sunReceiver = new THREE.Mesh(new THREE.OctahedronGeometry(5.8, 1), solarCoreMat);
+      sunReceiver.position.y = 75.5;
+      tower.add(sunReceiver);
+
+      const crownHalo = new THREE.Mesh(new THREE.TorusGeometry(8.6, 0.55, 8, 24), solarRingMat);
+      crownHalo.rotation.x = Math.PI / 2;
+      crownHalo.position.y = 75.5;
+      tower.add(crownHalo);
+
+      tower.position.set(tx, ty, tz);
+      env.add(tower);
+
+      // Ring of 8 angled solar mirrors orbiting the tower base
+      for (let m = 0; m < 8; m++) {
+        const a = (m / 8) * Math.PI * 2;
+        const mx = tx + Math.cos(a) * 20;
+        const mz = tz + Math.sin(a) * 20;
+        const info = nearestTrackInfo(mx, mz);
+        if (info.dist < info.halfWidth + 14) continue;
+        mirrorPositions.push({ x: mx, y: ty + 3.5, z: mz, yaw: a + Math.PI / 2 });
+      }
+    }
+    if (mirrorPositions.length > 0) {
+      const mirrorInst = new THREE.InstancedMesh(mirrorPanelGeo, mirrorPanelMat, mirrorPositions.length);
+      mirrorPositions.forEach((mp, idx) => {
+        dummy.position.set(mp.x, mp.y, mp.z);
+        dummy.rotation.set(0.45, mp.yaw, 0);
+        dummy.scale.setScalar(1);
+        dummy.updateMatrix();
+        mirrorInst.setMatrixAt(idx, dummy.matrix);
+      });
+      mirrorInst.instanceMatrix.needsUpdate = true;
+      mirrorInst.computeBoundingSphere();
+      env.add(mirrorInst);
+    }
+
+    // 6. Four Drifting Saucer GP Spectator Solar Blimps in the canyon sky!
+    const blimpHullMat = new THREE.MeshPhysicalMaterial({
+      color: 0xf7f2ea,
+      roughness: 0.28,
+      metalness: 0.22,
+      clearcoat: 0.85,
+    });
+    const blimpStripeCyan = new THREE.MeshStandardMaterial({
+      color: 0x2df9f2,
+      emissive: 0x0ec7c7,
+      emissiveIntensity: 1.1,
+      roughness: 0.22,
+    });
+    const blimpStripeAmber = new THREE.MeshStandardMaterial({
+      color: 0xffa63d,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 0.95,
+      roughness: 0.22,
+    });
+    const blimpFinMat = new THREE.MeshStandardMaterial({ color: 0x262c3d, roughness: 0.45, metalness: 0.6 });
+    const blimpSpots = [
+      { t: 0.055, side: -1, off: 46, alt: 35 },
+      { t: 0.28, side: 1, off: 78, alt: 52 },
+      { t: 0.52, side: -1, off: 72, alt: 48 },
+      { t: 0.82, side: -1, off: 75, alt: 54 },
+    ];
+    blimpSpots.forEach((bs, idx) => {
+      const f = sampleTrackFrame(track, bs.t);
+      const blimp = new THREE.Group();
+      const hull = new THREE.Mesh(new THREE.SphereGeometry(9.5, 16, 12), blimpHullMat);
+      hull.scale.set(1.0, 0.78, 2.35);
+      blimp.add(hull);
+
+      const stripe = new THREE.Mesh(
+        new THREE.TorusGeometry(9.65, 0.75, 8, 24),
+        idx % 2 === 0 ? blimpStripeCyan : blimpStripeAmber,
+      );
+      stripe.scale.set(1.0, 0.78, 1.0);
+      blimp.add(stripe);
+
+      const gondola = new THREE.Mesh(new THREE.BoxGeometry(3.6, 2.8, 9.5), blimpFinMat);
+      gondola.position.set(0, -8.2, 0);
+      blimp.add(gondola);
+
+      const vFin = new THREE.Mesh(new THREE.BoxGeometry(0.6, 9.0, 7.5), blimpFinMat);
+      vFin.position.set(0, 3.2, -17.5);
+      blimp.add(vFin);
+
+      const hFin = new THREE.Mesh(new THREE.BoxGeometry(14.5, 0.6, 6.5), blimpFinMat);
+      hFin.position.set(0, 0, -17.5);
+      blimp.add(hFin);
+
+      const bx = f.pos.x + f.right.x * (f.width * 0.5 + bs.off) * bs.side;
+      const by = f.pos.y + bs.alt;
+      const bz = f.pos.z + f.right.z * (f.width * 0.5 + bs.off) * bs.side;
+      blimp.position.set(bx, by, bz);
+      blimp.rotation.y = Math.atan2(f.tangent.x, f.tangent.z) + 0.35;
+      env.add(blimp);
+      floatingProps.push({
+        mesh: blimp,
+        baseY: by,
+        phase: idx * 1.6,
+        bobAmp: 2.6,
+        bobSpeed: 0.75 + idx * 0.12,
+        rotSpeed: 0.03 * (idx % 2 === 0 ? 1 : -1),
+      });
+    });
+  } else if (biome === 'biolume') {
     // Giant alien glowing mushroom trees (stalks + luminous domed caps) + floating jellyfish spores!
     const stalkGeo = new THREE.CylinderGeometry(1.4, 2.8, 36, 8);
     stalkGeo.translate(0, 18, 0);
@@ -3002,7 +3357,7 @@ export function buildCanyonEnvironment(
       env.add(gateRoot);
     }
   } else if (biome !== 'cybercity') {
-    const archTs = [0.16, 0.62];
+    const archTs = biome === 'canyon' ? [0.068, 0.395, 0.675, 0.875] : [0.16, 0.62];
     const archMat = new THREE.MeshStandardMaterial({
       color:
         biome === 'glacier'
@@ -3021,6 +3376,8 @@ export function buildCanyonEnvironment(
         ? new THREE.MeshBasicMaterial({ color: 0xff6b2b })
         : biome === 'biolume'
         ? new THREE.MeshBasicMaterial({ color: 0x34d399 })
+        : biome === 'canyon'
+        ? new THREE.MeshBasicMaterial({ color: 0xffd166 })
         : null;
 
     for (const archT of archTs) {
@@ -3670,3 +4027,324 @@ export function buildWarpTunnels(track: BakedTrack): {
 
   return { group, visuals };
 }
+
+/**
+ * Builds interactive 3D Track Obstacles:
+ * - 'rock-pillar': Sculpted sandstone split-divider spire with luminous hover-height collar
+ * - 'hover-drone': Patrolling canyon recon drone with glowing scanner eye, rotor halo & ground shadow
+ * - 'bumper-orb': Playful Solar Pinball Bumper with crystal-gold spring sphere & orbiting energy ring
+ */
+export function buildTrackObstacles(
+  track: BakedTrack,
+  isSoftwareGl: boolean,
+): {
+  group: THREE.Group;
+  visuals: ObstacleVisual[];
+} {
+  const group = new THREE.Group();
+  const visuals: ObstacleVisual[] = [];
+  const defs = track.def.obstacles;
+  if (!defs || defs.length === 0) return { group, visuals };
+
+  const rockBaseMat = new THREE.MeshStandardMaterial({
+    color: 0xa44b30,
+    roughness: 0.86,
+    metalness: 0.06,
+    flatShading: true,
+  });
+  const rockTopMat = new THREE.MeshStandardMaterial({
+    color: 0xd98451,
+    roughness: 0.8,
+    metalness: 0.06,
+    flatShading: true,
+  });
+  const metalMat = new THREE.MeshStandardMaterial({
+    color: 0x242a3b,
+    roughness: 0.4,
+    metalness: 0.78,
+  });
+  const amberGlowMat = new THREE.MeshStandardMaterial({
+    color: 0xffd166,
+    emissive: 0xff9f1c,
+    emissiveIntensity: 1.5,
+    roughness: 0.22,
+  });
+  const cyanGlowMat = new THREE.MeshStandardMaterial({
+    color: 0x5dfcf7,
+    emissive: 0x0ec7c7,
+    emissiveIntensity: 1.65,
+    roughness: 0.18,
+  });
+  const coralGlowMat = new THREE.MeshStandardMaterial({
+    color: 0xff6b4a,
+    emissive: 0xff3b30,
+    emissiveIntensity: 1.6,
+    roughness: 0.22,
+  });
+
+  for (const ob of defs) {
+    const { pos, frame } = trackToWorld(track, ob.t, ob.lateral, 0.05);
+    const basis = new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(frame.right.x, frame.right.y, frame.right.z),
+      new THREE.Vector3(frame.up.x, frame.up.y, frame.up.z),
+      new THREE.Vector3(-frame.tangent.x, -frame.tangent.y, -frame.tangent.z),
+    );
+
+    // Subtle ground patrol rail for moving hover drones so players read their sweep zone cleanly
+    if ((ob.moveAmplitude ?? 0) > 0.01) {
+      const railSpan = (ob.moveAmplitude ?? 0) * 2 + ob.radius * 2;
+      const rail = new THREE.Mesh(
+        new THREE.PlaneGeometry(railSpan, 0.45),
+        new THREE.MeshBasicMaterial({
+          color: 0xff9f1c,
+          transparent: true,
+          opacity: 0.24,
+          polygonOffset: true,
+          polygonOffsetFactor: -1,
+          polygonOffsetUnits: -1,
+        }),
+      );
+      rail.quaternion.setFromRotationMatrix(basis);
+      rail.rotateX(-Math.PI / 2);
+      rail.position.set(
+        pos.x + frame.up.x * 0.03,
+        pos.y + frame.up.y * 0.03,
+        pos.z + frame.up.z * 0.03,
+      );
+      group.add(rail);
+    }
+
+    const oGroup = new THREE.Group();
+    let spinPart: THREE.Object3D | null = null;
+    let pulsePart: THREE.Object3D | null = null;
+
+    if (ob.kind === 'rock-pillar') {
+      // Composite 4-part sculpted sandstone split-pillar with metallic warning collar
+      const plinth = new THREE.Mesh(
+        new THREE.CylinderGeometry(ob.radius * 0.92, ob.radius * 1.08, 2.2, 7),
+        rockBaseMat,
+      );
+      plinth.position.y = 1.1;
+      plinth.castShadow = !isSoftwareGl;
+      oGroup.add(plinth);
+
+      const column = new THREE.Mesh(
+        new THREE.CylinderGeometry(ob.radius * 0.62, ob.radius * 0.9, ob.height * 0.68, 7),
+        rockTopMat,
+      );
+      column.position.y = 2.0 + ob.height * 0.34;
+      column.castShadow = !isSoftwareGl;
+      oGroup.add(column);
+
+      const cap = new THREE.Mesh(
+        new THREE.ConeGeometry(ob.radius * 0.68, ob.height * 0.28, 7),
+        rockBaseMat,
+      );
+      cap.position.y = 2.0 + ob.height * 0.68 + ob.height * 0.14;
+      oGroup.add(cap);
+
+      // Luminous warning holo-collar at hover height so players spot the split from afar!
+      const collar = new THREE.Mesh(
+        new THREE.TorusGeometry(ob.radius * 1.02, 0.24, 8, 20),
+        amberGlowMat,
+      );
+      collar.rotation.x = Math.PI / 2;
+      collar.position.y = 1.9;
+      oGroup.add(collar);
+      pulsePart = collar;
+    } else if (ob.kind === 'hover-drone') {
+      // Composite 5-part patrolling Canyon Recon Drone
+      const hoverCenter = new THREE.Group();
+      hoverCenter.position.y = 1.75;
+
+      const core = new THREE.Mesh(new THREE.OctahedronGeometry(ob.radius * 0.62, 1), metalMat);
+      core.scale.set(1.15, 0.72, 1.15);
+      hoverCenter.add(core);
+
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(ob.radius * 0.32, 12, 10), coralGlowMat);
+      eye.position.set(0, 0.05, ob.radius * 0.56);
+      hoverCenter.add(eye);
+
+      const rotorRing = new THREE.Group();
+      const ringMesh = new THREE.Mesh(
+        new THREE.TorusGeometry(ob.radius * 0.92, 0.18, 8, 22),
+        amberGlowMat,
+      );
+      ringMesh.rotation.x = Math.PI / 2;
+      rotorRing.add(ringMesh);
+
+      const bladeGeo = new THREE.BoxGeometry(ob.radius * 1.85, 0.12, 0.32);
+      const bladeA = new THREE.Mesh(bladeGeo, metalMat);
+      const bladeB = new THREE.Mesh(bladeGeo, metalMat);
+      bladeB.rotation.y = Math.PI / 2;
+      rotorRing.add(bladeA, bladeB);
+      hoverCenter.add(rotorRing);
+      spinPart = rotorRing;
+
+      oGroup.add(hoverCenter);
+      pulsePart = hoverCenter;
+
+      // Ground glow ring right beneath drone
+      const groundMark = new THREE.Mesh(
+        new THREE.RingGeometry(ob.radius * 0.55, ob.radius * 0.95, 20),
+        new THREE.MeshBasicMaterial({
+          color: 0xff6b4a,
+          transparent: true,
+          opacity: 0.45,
+          side: THREE.DoubleSide,
+        }),
+      );
+      groundMark.rotation.x = -Math.PI / 2;
+      groundMark.position.y = 0.08;
+      oGroup.add(groundMark);
+    } else {
+      // 'bumper-orb': Unique Fun Solar Pinball Bumper!
+      const ped = new THREE.Mesh(
+        new THREE.CylinderGeometry(ob.radius * 0.72, ob.radius * 0.94, 0.65, 16),
+        metalMat,
+      );
+      ped.position.y = 0.32;
+      oGroup.add(ped);
+
+      const pedRing = new THREE.Mesh(
+        new THREE.TorusGeometry(ob.radius * 0.92, 0.16, 8, 22),
+        cyanGlowMat,
+      );
+      pedRing.rotation.x = Math.PI / 2;
+      pedRing.position.y = 0.64;
+      oGroup.add(pedRing);
+
+      const orbCore = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(ob.radius * 0.74, 1),
+        amberGlowMat,
+      );
+      orbCore.position.y = 1.95;
+      oGroup.add(orbCore);
+      pulsePart = orbCore;
+
+      const orbitGroup = new THREE.Group();
+      orbitGroup.position.y = 1.95;
+      const orbitRing = new THREE.Mesh(
+        new THREE.TorusGeometry(ob.radius * 1.04, 0.19, 8, 24),
+        cyanGlowMat,
+      );
+      orbitRing.rotation.x = Math.PI / 3;
+      orbitGroup.add(orbitRing);
+
+      const orbitRing2 = new THREE.Mesh(
+        new THREE.TorusGeometry(ob.radius * 1.04, 0.14, 8, 24),
+        amberGlowMat,
+      );
+      orbitRing2.rotation.y = Math.PI / 3;
+      orbitGroup.add(orbitRing2);
+      oGroup.add(orbitGroup);
+      spinPart = orbitGroup;
+    }
+
+    oGroup.quaternion.setFromRotationMatrix(basis);
+    oGroup.position.set(pos.x, pos.y, pos.z);
+    group.add(oGroup);
+
+    visuals.push({
+      id: ob.id,
+      kind: ob.kind,
+      group: oGroup,
+      spinPart,
+      pulsePart,
+      basePos: new THREE.Vector3(pos.x, pos.y, pos.z),
+      rightVec: new THREE.Vector3(frame.right.x, frame.right.y, frame.right.z),
+      baseLateral: ob.lateral,
+      def: ob,
+    });
+  }
+
+  return { group, visuals };
+}
+
+/**
+ * Builds Floating Slingshot Turbo Gates — glowing spinning holographic chevron gates
+ * that reward aerial jumps, updraft chains, and sprint lines with a hyper-pulse burst!
+ */
+export function buildSpeedGates(track: BakedTrack): {
+  group: THREE.Group;
+  visuals: SpeedGateVisual[];
+} {
+  const group = new THREE.Group();
+  const visuals: SpeedGateVisual[] = [];
+  const defs = track.def.speedGates;
+  if (!defs || defs.length === 0) return { group, visuals };
+
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0x1e2538,
+    roughness: 0.35,
+    metalness: 0.82,
+  });
+
+  for (const gate of defs) {
+    const { pos, frame } = trackToWorld(track, gate.t, gate.lateral, gate.heightOffset);
+    const basis = new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(frame.right.x, frame.right.y, frame.right.z),
+      new THREE.Vector3(frame.up.x, frame.up.y, frame.up.z),
+      new THREE.Vector3(-frame.tangent.x, -frame.tangent.y, -frame.tangent.z),
+    );
+
+    const gGroup = new THREE.Group();
+    const neonMat = new THREE.MeshStandardMaterial({
+      color: gate.colorHex,
+      emissive: gate.colorHex,
+      emissiveIntensity: 1.85,
+      roughness: 0.16,
+      metalness: 0.3,
+    });
+
+    const outerFrame = new THREE.Mesh(
+      new THREE.TorusGeometry(gate.radius, 0.34, 8, 24),
+      frameMat,
+    );
+    gGroup.add(outerFrame);
+
+    const spinRing = new THREE.Group();
+    const innerGlow = new THREE.Mesh(
+      new THREE.TorusGeometry(gate.radius - 0.45, 0.24, 8, 24),
+      neonMat,
+    );
+    spinRing.add(innerGlow);
+
+    // 4 glowing directional turbo fins radiating around the slingshot portal
+    const finGeo = new THREE.ConeGeometry(0.68, 2.2, 4);
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+      const fin = new THREE.Mesh(finGeo, neonMat);
+      fin.position.set(Math.cos(a) * (gate.radius + 0.9), Math.sin(a) * (gate.radius + 0.9), 0);
+      fin.rotation.z = a - Math.PI / 2;
+      spinRing.add(fin);
+    }
+    gGroup.add(spinRing);
+
+    // Subtle holographic center shimmer disc
+    const shimmer = new THREE.Mesh(
+      new THREE.CircleGeometry(gate.radius - 0.65, 20),
+      new THREE.MeshBasicMaterial({
+        color: gate.colorHex,
+        transparent: true,
+        opacity: 0.14,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    gGroup.add(shimmer);
+
+    gGroup.quaternion.setFromRotationMatrix(basis);
+    gGroup.position.set(pos.x, pos.y, pos.z);
+    group.add(gGroup);
+
+    visuals.push({
+      id: gate.id,
+      group: gGroup,
+      spinRing,
+    });
+  }
+
+  return { group, visuals };
+}
+

@@ -745,10 +745,10 @@ export function createInitialRacers(
     const initialProgress = startsBehind ? slot.t - 1 : slot.t;
     const world = trackToWorld(track, slot.t, slot.lateral, 1.35);
     const yaw = Math.atan2(world.frame.tangent.x, world.frame.tangent.z);
-    // Scale rival skill with level difficulty while keeping player fair & competitive
+    // Scale rival skill with level difficulty while keeping Easy Level 1 super welcoming
     const effectiveSkill = cfg.isPlayer
       ? 1.0
-      : Math.min(0.995, Math.max(0.65, cfg.skillFactor * aiPaceScale));
+      : Math.min(0.995, Math.max(0.56, cfg.skillFactor * aiPaceScale));
 
     return {
       id: cfg.id,
@@ -779,6 +779,8 @@ export function createInitialRacers(
       rampCooldown: 0,
       updraftCooldown: 0,
       warpCooldown: 0,
+      bumperCooldown: 0,
+      gateCooldown: 0,
       hitFlashTimer: 0,
       shockSlowTimer: 0,
       squashX: 1,

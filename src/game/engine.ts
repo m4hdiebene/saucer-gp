@@ -45,6 +45,7 @@ import {
   computeAiInput,
   getHazardLateral,
   getHazardPhase,
+  getObstacleLateral,
   resolveRacerCollisions,
   stepRacerPhysics,
   type PhysicsEvent,
@@ -57,8 +58,10 @@ import {
   buildJumpRamps,
   buildShockHazards,
   buildSkyDome,
+  buildSpeedGates,
   buildStartGantry,
   buildTrackMesh,
+  buildTrackObstacles,
   buildUfoModel,
   buildUpdrafts,
   buildWarpTunnels,
@@ -67,7 +70,9 @@ import {
   type CheckpointVisual,
   type FloatingPropVisual,
   type HazardVisual,
+  type ObstacleVisual,
   type RingVisual,
+  type SpeedGateVisual,
   type UfoVisualRig,
   type UpdraftVisual,
   type WarpTunnelVisual,
@@ -162,6 +167,8 @@ export class SaucerGameEngine {
   private ringVisuals: RingVisual[] = [];
   private checkpointVisuals: CheckpointVisual[] = [];
   private hazardVisuals: HazardVisual[] = [];
+  private obstacleVisuals: ObstacleVisual[] = [];
+  private speedGateVisuals: SpeedGateVisual[] = [];
   private updraftVisuals: UpdraftVisual[] = [];
   private warpTunnelVisuals: WarpTunnelVisual[] = [];
   private rotatingGates: THREE.Group[] = [];
@@ -259,7 +266,7 @@ export class SaucerGameEngine {
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(64, width / height, 0.3, 2600);
+    this.camera = new THREE.PerspectiveCamera(64, width / height, 0.3, 3200);
 
     // Mandatory studio PBR environment reflections via RoomEnvironment on every device
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -632,6 +639,8 @@ export class SaucerGameEngine {
     this.ringVisuals = [];
     this.checkpointVisuals = [];
     this.hazardVisuals = [];
+    this.obstacleVisuals = [];
+    this.speedGateVisuals = [];
     this.updraftVisuals = [];
     this.warpTunnelVisuals = [];
     this.rotatingGates = [];
@@ -645,19 +654,21 @@ export class SaucerGameEngine {
     this.clearWorldGroup();
 
     const def = CIRCUITS[this.circuitId];
-    this.track = buildBakedTrack(def, 480);
+    this.track = buildBakedTrack(def, 600);
     const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
 
     // Match fog, background, and 3-point lighting to planetary biome (tuned for huge scenic vistas)
     this.scene.background = new THREE.Color(def.fogColor);
     const fogDensity =
-      def.biome === 'aether' || def.biome === 'cybercity' || def.biome === 'quantum'
+      def.biome === 'canyon'
+        ? 0.00092
+        : def.biome === 'aether' || def.biome === 'cybercity' || def.biome === 'quantum'
         ? 0.00108
         : 0.00135;
     this.scene.fog = new THREE.FogExp2(def.fogColor, fogDensity);
     this.applyBiomeLighting(def.biome);
 
-    // Sky dome + Biome environment + Track + Gantry + Boost pads + Jump Ramps + Updrafts + Warp Tunnels + Rings + Checkpoints + Hazards
+    // Sky dome + Biome environment + Track + Gantry + Boost pads + Jump Ramps + Updrafts + Warp Tunnels + Rings + Checkpoints + Hazards + Obstacles + Slingshot Gates
     this.worldGroup.add(buildSkyDome(def.skyTopColor, def.skyHorizonColor));
     const envBuilt = buildCanyonEnvironment(this.track, maxAniso, this.isSoftwareGl);
     this.worldGroup.add(envBuilt.group);
@@ -692,6 +703,14 @@ export class SaucerGameEngine {
     );
     this.worldGroup.add(hazards.group);
     this.hazardVisuals = hazards.visuals;
+
+    const obstacles = buildTrackObstacles(this.track, this.isSoftwareGl);
+    this.worldGroup.add(obstacles.group);
+    this.obstacleVisuals = obstacles.visuals;
+
+    const speedGates = buildSpeedGates(this.track);
+    this.worldGroup.add(speedGates.group);
+    this.speedGateVisuals = speedGates.visuals;
 
     // Build level-specific exotic 6-UFO fleet (with distinct player craft & rivals per level!)
     const levelRoster = getLevelRoster(
@@ -1092,6 +1111,37 @@ export class SaucerGameEngine {
           this.audio.playBoostPad();
           this.applyCameraRecoil(0, -1.2, 0);
           this.pushCallout('WARP SURGE! +200', 'amber', 1.15);
+        }
+      } else if (ev.type === 'slingshot-gate') {
+        this.spawnImpactRing(ev.worldX, ev.worldY, ev.worldZ, 0, 0, 1, 0xffd166, 5.0, 0.44);
+        this.spawnParticles(ev.worldX, ev.worldY, ev.worldZ, ev.isPlayer ? 24 : 8, 0xffd166, 20, 0.48, 1.3);
+        if (ev.isPlayer) {
+          this.audio.playBoostPad();
+          this.applyCameraRecoil(0, -1.4, 0);
+          this.pushCallout('SLINGSHOT! +180', 'amber', 1.1);
+        }
+      } else if (ev.type === 'bumper-bounce') {
+        const nx = ev.normalX ?? 0;
+        const ny = ev.normalY ?? 0.35;
+        const nz = ev.normalZ ?? 0;
+        this.spawnImpactRing(ev.worldX, ev.worldY, ev.worldZ, nx, ny, nz, 0xffd166, 4.2, 0.38);
+        this.spawnDirectionalSparks(ev.worldX, ev.worldY, ev.worldZ, nx, ny + 0.25, nz, 18, 0x5dfcf7, 17, 0.42, 1.15);
+        if (ev.isPlayer) {
+          const dir = ev.impactDir ?? 1;
+          this.audio.playRingPickup(true);
+          this.applyCameraRecoil(-dir * 3.6, 1.3, -dir * 0.14);
+          this.pushCallout('PINBALL BOUNCE! +100', 'cyan', 1.0);
+        }
+      } else if (ev.type === 'obstacle-hit') {
+        const nx = ev.normalX ?? 0;
+        const ny = ev.normalY ?? 0.3;
+        const nz = ev.normalZ ?? 0;
+        this.spawnImpactRing(ev.worldX, ev.worldY, ev.worldZ, nx, ny, nz, 0xff9f1c, 3.0, 0.32);
+        this.spawnDirectionalSparks(ev.worldX, ev.worldY, ev.worldZ, nx, ny, nz, 14, 0xffb74d, 15, 0.36, 1.0);
+        if (ev.isPlayer) {
+          const dir = ev.impactDir ?? 1;
+          this.audio.playBump(ev.intensity * 0.8);
+          this.applyCameraRecoil(-dir * 4.4 * ev.intensity, 0.8, -dir * 0.16 * ev.intensity);
         }
       } else if (ev.type === 'side-dash') {
         const dir = ev.impactDir ?? 1;
@@ -1494,6 +1544,43 @@ export class SaucerGameEngine {
           m.emissiveIntensity = 2.6;
         });
       }
+    }
+
+    // Animate Track Obstacles (patrolling Hover Drones, pulsing Solar Pinball Bumpers & Pillar collars)
+    for (let i = 0; i < this.obstacleVisuals.length; i++) {
+      const ov = this.obstacleVisuals[i];
+      if ((ov.def.moveAmplitude ?? 0) > 0.01) {
+        const liveLat = getObstacleLateral(ov.def, elapsed);
+        const deltaLat = liveLat - ov.baseLateral;
+        ov.group.position.set(
+          ov.basePos.x + ov.rightVec.x * deltaLat,
+          ov.basePos.y + ov.rightVec.y * deltaLat,
+          ov.basePos.z + ov.rightVec.z * deltaLat,
+        );
+      }
+      if (ov.kind === 'hover-drone') {
+        if (ov.spinPart) ov.spinPart.rotation.y = elapsed * 5.2 + i;
+        if (ov.pulsePart) ov.pulsePart.position.y = 1.75 + Math.sin(elapsed * 3.8 + i) * 0.24;
+      } else if (ov.kind === 'bumper-orb') {
+        if (ov.spinPart) {
+          ov.spinPart.rotation.y = elapsed * 2.8 + i;
+          ov.spinPart.rotation.x = Math.sin(elapsed * 1.9 + i) * 0.35;
+        }
+        if (ov.pulsePart) {
+          const s = 1.0 + Math.sin(elapsed * 5.5 + i * 1.3) * 0.08;
+          ov.pulsePart.scale.setScalar(s);
+        }
+      } else if (ov.kind === 'rock-pillar' && ov.pulsePart) {
+        const s = 1.0 + Math.sin(elapsed * 3.2 + i) * 0.03;
+        ov.pulsePart.scale.set(s, s, 1);
+      }
+    }
+
+    // Animate Spinning Floating Slingshot Turbo Gates
+    for (let i = 0; i < this.speedGateVisuals.length; i++) {
+      const sg = this.speedGateVisuals[i];
+      const dir = i % 2 === 0 ? 1 : -1;
+      sg.spinRing.rotation.z = elapsed * 1.85 * dir + i;
     }
   }
 

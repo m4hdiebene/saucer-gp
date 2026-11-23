@@ -158,6 +158,32 @@ export interface ShockHazardDef {
   moveSpeed?: number; // oscillation speed (rad/s)
 }
 
+export type TrackObstacleKind = 'rock-pillar' | 'hover-drone' | 'bumper-orb';
+
+export interface TrackObstacleDef {
+  id: string;
+  kind: TrackObstacleKind;
+  t: number; // track progress [0, 1)
+  lateral: number; // base lateral offset from centerline (m)
+  radius: number; // collision radius (m)
+  height: number; // clearance height (m) — hover-drones & bumper-orbs can be hopped over
+  moveAmplitude?: number; // optional lateral patrol sweep (m)
+  moveSpeed?: number; // patrol speed (rad/s)
+  phaseOffset?: number;
+  bounceForce?: number; // elastic ricochet force for bumper-orb pinball pads
+  colorHex?: number;
+}
+
+export interface SpeedGateDef {
+  id: string;
+  t: number; // track progress [0, 1)
+  lateral: number; // lateral offset (m)
+  heightOffset: number; // center height above track deck (m)
+  radius: number; // generous capture radius (m)
+  speedBonus: number; // forward burst impulse (m/s)
+  colorHex: number;
+}
+
 export interface CircuitDefinition {
   id: CircuitId;
   biome: BiomeTheme;
@@ -173,6 +199,8 @@ export interface CircuitDefinition {
   warpTunnels: WarpTunnelDef[];
   rings: EnergyRingDef[];
   hazards: ShockHazardDef[];
+  obstacles?: TrackObstacleDef[];
+  speedGates?: SpeedGateDef[];
   skyTopColor: string;
   skyHorizonColor: string;
   fogColor: string;
@@ -225,6 +253,8 @@ export interface RacerState {
   rampCooldown: number; // prevents double-trigger on same ramp
   updraftCooldown: number; // prevents spam-trigger inside updraft vortex
   warpCooldown: number; // prevents spam-trigger inside warp tunnel
+  bumperCooldown: number; // prevents multi-frame bounce spam on pinball bumpers
+  gateCooldown: number; // prevents double-trigger on slingshot turbo gates
   hitFlashTimer: number;
   shockSlowTimer: number;
   squashX: number;

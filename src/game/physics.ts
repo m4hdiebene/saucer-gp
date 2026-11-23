@@ -4,6 +4,7 @@ import type {
   PlayerInput,
   RacerState,
   ShockHazardDef,
+  TrackObstacleDef,
 } from './types';
 import type { BakedTrack } from './track';
 import {
@@ -76,6 +77,20 @@ export function getHazardLateral(
   return hazard.lateral + Math.sin(raceTime * speed + hazard.phaseOffset) * amp;
 }
 
+/**
+ * Returns the live lateral position of a static or patrolling track obstacle at raceTime.
+ */
+export function getObstacleLateral(
+  obstacle: TrackObstacleDef,
+  raceTime: number,
+): number {
+  const amp = obstacle.moveAmplitude ?? 0;
+  if (amp <= 0.01) return obstacle.lateral;
+  const speed = obstacle.moveSpeed ?? 1.0;
+  const phase = obstacle.phaseOffset ?? 0;
+  return obstacle.lateral + Math.sin(raceTime * speed + phase) * amp;
+}
+
 export interface PhysicsEvent {
   type:
     | 'boost-start'
@@ -83,6 +98,9 @@ export interface PhysicsEvent {
     | 'ramp-launch'
     | 'updraft-lift'
     | 'warp-surge'
+    | 'slingshot-gate'
+    | 'bumper-bounce'
+    | 'obstacle-hit'
     | 'side-dash'
     | 'ring-pickup'
     | 'checkpoint'
@@ -158,15 +176,25 @@ export function computeAiInput(
   let boostHeld = false;
   let hopJustPressed = false;
 
-  // Launch ramp tightens across levels (gentle 1.9s on Lv1 -> snappy 0.8s on Lv8)
+  // Launch ramp tightens across levels (gentle 2.5s on Lv1 -> snappy 0.8s on Lv8)
+  const isEasyMap = level.tier === 'Easy';
   const rampSec = Math.max(0.5, level.aiLaunchRampSec);
-  const launchScale = clamp(0.52 + (raceTime / rampSec) * 0.48, 0.52, 1.0);
+  const launchFloor = isEasyMap ? 0.44 : 0.52;
+  const launchScale = clamp(launchFloor + (raceTime / rampSec) * (1 - launchFloor), launchFloor, 1.0);
 
-  // Level-aware rubber-banding: friendlier on Lv1–3, tighter racing on Lv5–8
+  // Level-aware rubber-banding: welcoming & forgiving on Easy maps, tighter racing on Lv5–8
   const gapToPlayer = racer.totalProgress - playerProgress;
   const highTierFactor = clamp((level.number - 1) / 7, 0, 1);
   let paceAdjust = 1.0;
-  if (gapToPlayer > 0.09) {
+  if (isEasyMap) {
+    if (gapToPlayer > 0.06) {
+      paceAdjust = 0.76;
+    } else if (gapToPlayer > 0.025) {
+      paceAdjust = 0.86;
+    } else if (gapToPlayer < -0.22) {
+      paceAdjust = 1.01;
+    }
+  } else if (gapToPlayer > 0.09) {
     paceAdjust = 0.83 + highTierFactor * 0.1;
   } else if (gapToPlayer > 0.04) {
     paceAdjust = 0.91 + highTierFactor * 0.06;
@@ -176,7 +204,8 @@ export function computeAiInput(
 
   const boostAggro = level.aiBoostAggression;
   const boostThresholdOffset = (1 - boostAggro) * 20;
-  const burstScale = clamp(boostAggro, 0.4, 1.38);
+  const burstScale = clamp(boostAggro, 0.35, 1.38);
+  const canBoostAhead = !isEasyMap || gapToPlayer < -0.01;
 
   if (racer.aiDecisionTimer <= 0) {
     racer.aiDecisionTimer = Math.max(0.18, (0.38 - highTierFactor * 0.12) + Math.random() * 0.22);
@@ -187,6 +216,7 @@ export function computeAiInput(
       racer.aiTargetLane =
         apexSide !== 0 ? apexSide * halfSafe * 0.58 : racer.preferredLane * halfSafe * 0.5;
       if (
+        canBoostAhead &&
         Math.abs(aheadFrame.curvature) < 0.022 &&
         racer.boostEnergy > 62 + boostThresholdOffset &&
         gapToPlayer < 0.06 + highTierFactor * 0.04
@@ -219,6 +249,7 @@ export function computeAiInput(
       }
       racer.aiTargetLane = targetLane !== null ? targetLane : Math.sin(raceTime * 1.2) * halfSafe * 0.5;
       if (
+        canBoostAhead &&
         racer.boostEnergy > 52 + boostThresholdOffset &&
         racer.boostPadTimer <= 0 &&
         gapToPlayer < 0.05 + highTierFactor * 0.05
@@ -226,16 +257,22 @@ export function computeAiInput(
         racer.aiBoostBurstTimer = 0.55 * burstScale;
       }
     } else if (policy === 'bruiser') {
-      racer.aiTargetLane = 0;
-      for (const other of allRacers) {
-        if (other.id === racer.id) continue;
-        const d = shortestProgressDelta(other.t, racer.t);
-        if (d > 0.006 && d < 0.028) {
-          racer.aiTargetLane = clamp(other.lateral * 0.55, -halfSafe * 0.45, halfSafe * 0.45);
-          break;
+      // On Easy maps, bruisers cruise cleanly in their preferred lane instead of aggressively blocking
+      if (isEasyMap) {
+        racer.aiTargetLane = racer.preferredLane * halfSafe * 0.55;
+      } else {
+        racer.aiTargetLane = 0;
+        for (const other of allRacers) {
+          if (other.id === racer.id) continue;
+          const d = shortestProgressDelta(other.t, racer.t);
+          if (d > 0.006 && d < 0.028) {
+            racer.aiTargetLane = clamp(other.lateral * 0.55, -halfSafe * 0.45, halfSafe * 0.45);
+            break;
+          }
         }
       }
       if (
+        canBoostAhead &&
         racer.boostEnergy > 74 + boostThresholdOffset &&
         gapToPlayer < 0.04 + highTierFactor * 0.04
       ) {
@@ -257,6 +294,7 @@ export function computeAiInput(
           const passSign = leadRacer.lateral >= 0 ? -1 : 1;
           racer.aiTargetLane = clamp(leadRacer.lateral + passSign * 5.2, -halfSafe, halfSafe);
           if (
+            canBoostAhead &&
             racer.boostEnergy > 48 + boostThresholdOffset &&
             gapToPlayer < 0.05 + highTierFactor * 0.05
           ) {
@@ -285,10 +323,47 @@ export function computeAiInput(
         racer.aiTargetLane = outerSide * halfSafe * 0.6;
       }
       if (
+        canBoostAhead &&
         racer.boostEnergy > 64 + boostThresholdOffset &&
         gapToPlayer < 0.04 + highTierFactor * 0.04
       ) {
         racer.aiBoostBurstTimer = 0.42 * burstScale;
+      }
+    }
+  }
+
+  // Easy-map courtesy: when closely alongside or just ahead of the player, gently yield lateral space
+  if (isEasyMap) {
+    const player = allRacers.find((r) => r.isPlayer);
+    if (player) {
+      const dMeters = shortestProgressDelta(player.t, racer.t) * track.totalLength;
+      if (dMeters > -8 && dMeters < 24 && Math.abs(racer.lateral - player.lateral) < 7.5) {
+        const yieldSide = racer.lateral >= player.lateral ? 1 : -1;
+        racer.aiTargetLane = clamp(player.lateral + yieldSide * 9.5, -halfSafe, halfSafe);
+      }
+    }
+  }
+
+  // Active obstacle avoidance (sandstone pillars, patrolling hover drones, pinball bumpers)
+  const obstacles = track.def.obstacles;
+  if (obstacles && obstacles.length > 0) {
+    for (let oi = 0; oi < obstacles.length; oi++) {
+      const ob = obstacles[oi];
+      const dMeters = shortestProgressDelta(racer.t, ob.t) * track.totalLength;
+      if (dMeters > 4 && dMeters < 78) {
+        const obLat = getObstacleLateral(ob, raceTime);
+        const safeMargin = ob.radius + (ob.kind === 'bumper-orb' ? 3.2 : 5.2);
+        if (Math.abs(racer.aiTargetLane - obLat) < safeMargin || Math.abs(racer.lateral - obLat) < safeMargin) {
+          // Pick whichever open side has more room on the road
+          const leftRoom = halfSafe + obLat;
+          const rightRoom = halfSafe - obLat;
+          const goRight =
+            Math.abs(racer.lateral - obLat) > 1.2
+              ? racer.lateral >= obLat
+              : rightRoom >= leftRoom;
+          const avoidSign = goRight ? 1 : -1;
+          racer.aiTargetLane = clamp(obLat + avoidSign * (safeMargin + 3.2), -halfSafe, halfSafe);
+        }
       }
     }
   }
@@ -316,14 +391,20 @@ export function computeAiInput(
   const laneError = clamp(racer.aiTargetLane, -halfSafe, halfSafe) - racer.lateral;
   const steer = clamp(laneError * 0.18, -0.85, 0.85);
 
-  if (racer.aiPolicy === 'apex-hunter' && Math.abs(aheadFrame.curvature) > 0.04) {
+  if (isEasyMap && Math.abs(aheadFrame.curvature) > 0.025) {
+    throttle = 0.84;
+  } else if (racer.aiPolicy === 'apex-hunter' && Math.abs(aheadFrame.curvature) > 0.04) {
     throttle = 0.85 + highTierFactor * 0.08;
   }
 
-  const maxAiThrottle = 0.93 + highTierFactor * 0.07;
-  throttle = clamp(throttle * racer.skillFactor * paceAdjust * launchScale, 0.45, maxAiThrottle);
-  const boostMinTime = Math.max(1.2, 2.6 - highTierFactor * 1.2);
-  boostHeld = racer.aiBoostBurstTimer > 0 && racer.boostEnergy > 20 && raceTime > boostMinTime;
+  const maxAiThrottle = isEasyMap ? 0.88 : 0.93 + highTierFactor * 0.07;
+  throttle = clamp(throttle * racer.skillFactor * paceAdjust * launchScale, 0.42, maxAiThrottle);
+  const boostMinTime = isEasyMap ? 4.5 : Math.max(1.2, 2.6 - highTierFactor * 1.2);
+  boostHeld =
+    canBoostAhead &&
+    racer.aiBoostBurstTimer > 0 &&
+    racer.boostEnergy > 20 &&
+    raceTime > boostMinTime;
 
   return {
     throttle,
@@ -361,6 +442,8 @@ export function stepRacerPhysics(
   if (racer.hitFlashTimer > 0) racer.hitFlashTimer = Math.max(0, racer.hitFlashTimer - dt);
   if (racer.shockSlowTimer > 0) racer.shockSlowTimer = Math.max(0, racer.shockSlowTimer - dt);
   if (racer.bumpCooldown > 0) racer.bumpCooldown = Math.max(0, racer.bumpCooldown - dt);
+  if (racer.bumperCooldown > 0) racer.bumperCooldown = Math.max(0, racer.bumperCooldown - dt);
+  if (racer.gateCooldown > 0) racer.gateCooldown = Math.max(0, racer.gateCooldown - dt);
 
   if (racer.impactTimer > 0) {
     racer.impactTimer = Math.max(0, racer.impactTimer - dt);
@@ -794,6 +877,130 @@ export function stepRacerPhysics(
           normalY: 0.5,
           normalZ: -world.frame.tangent.z,
         });
+      }
+    }
+  }
+
+  // Interactive Track Obstacles: Sandstone Split-Pillars, Patrolling Hover Drones & Solar Pinball Bumpers!
+  const obstacles = track.def.obstacles;
+  if (obstacles && obstacles.length > 0) {
+    const ufoHeight = C.baseHoverHeight + racer.hoverY;
+    for (let oi = 0; oi < obstacles.length; oi++) {
+      const ob = obstacles[oi];
+      // Clean vertical clearance lets UFOs hop or sky-jump over hover drones & bumpers!
+      if (ufoHeight > ob.height + 0.65) continue;
+
+      const obLat = getObstacleLateral(ob, raceTime);
+      const dtMeters = shortestProgressDelta(ob.t, racer.t) * track.totalLength;
+      const dLat = racer.lateral - obLat;
+      const hitDist = ob.radius + C.ufoRadius * 0.92;
+      const distSq = dtMeters * dtMeters + dLat * dLat;
+
+      if (distSq < hitDist * hitDist && distSq > 1e-5) {
+        const dist = Math.sqrt(distSq);
+        const nxLat = Math.abs(dLat) > 0.15 ? dLat / dist : racer.lateral >= obLat ? 1 : -1;
+        const nxT = dtMeters / dist;
+        const pushOut = hitDist - dist + 0.55;
+        const pushSign = nxLat >= 0 ? 1 : -1;
+
+        racer.lateral = clamp(racer.lateral + pushSign * Math.max(0.6, Math.abs(nxLat) * pushOut), -deckHalfTrack, deckHalfTrack);
+
+        if (ob.kind === 'bumper-orb') {
+          if (racer.bumperCooldown <= 0) {
+            const bounceForce = ob.bounceForce ?? 22;
+            racer.bumperCooldown = 0.45;
+            racer.lateralVel = clamp(pushSign * bounceForce * 0.72, -C.maxLateralSpeed * 1.25, C.maxLateralSpeed * 1.25);
+            // Fun pinball momentum: pops forward + fills boost + awards style points!
+            racer.speed = Math.max(racer.speed + (racer.isPlayer ? 10 : 4), baseCap * 1.05);
+            racer.boostEnergy = Math.min(100, racer.boostEnergy + 15);
+            racer.vy = Math.max(racer.vy, 5.4);
+            racer.squashX = 1.24;
+            racer.squashY = 0.78;
+            if (racer.isPlayer) {
+              racer.styleScore += 100;
+            }
+            triggerImpactAnimation(racer, 'ufo-bump', -pushSign, 0.58, 0.36);
+            events.push({
+              type: 'bumper-bounce',
+              racerId: racer.id,
+              isPlayer: racer.isPlayer,
+              worldX: racer.worldX,
+              worldY: racer.worldY,
+              worldZ: racer.worldZ,
+              intensity: 0.85,
+              impactDir: -pushSign,
+              normalX: world.frame.right.x * pushSign,
+              normalY: 0.35,
+              normalZ: world.frame.right.z * pushSign,
+            });
+          }
+        } else {
+          // Solid sandstone split-pillar or patrolling hover drone -> smooth lateral deflection!
+          if (racer.bumpCooldown <= 0) {
+            racer.bumpCooldown = 0.36;
+            racer.hitFlashTimer = 0.08;
+            racer.lateralVel = clamp(pushSign * 14.5, -C.maxLateralSpeed, C.maxLateralSpeed);
+            // Gentle speed trim so Easy Level 1 never feels punishing or stuck
+            racer.speed *= ob.kind === 'rock-pillar' ? 0.84 : 0.88;
+            if (nxT < -0.25) {
+              // Ensure forward progress doesn't snag on front face of a pillar
+              racer.lateral = clamp(racer.lateral + pushSign * 1.2, -deckHalfTrack, deckHalfTrack);
+            }
+            racer.squashX = 0.86;
+            racer.squashY = 1.15;
+            triggerImpactAnimation(racer, 'wall-scrape', -pushSign, 0.72, 0.4);
+            events.push({
+              type: 'obstacle-hit',
+              racerId: racer.id,
+              isPlayer: racer.isPlayer,
+              worldX: racer.worldX,
+              worldY: racer.worldY,
+              worldZ: racer.worldZ,
+              intensity: 0.75,
+              impactDir: -pushSign,
+              normalX: world.frame.right.x * pushSign,
+              normalY: 0.3,
+              normalZ: world.frame.right.z * pushSign,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Floating Slingshot Turbo Gates — fly through glowing aerial/sprint chevron gates for a hyper-pulse!
+  const speedGates = track.def.speedGates;
+  if (speedGates && speedGates.length > 0 && racer.gateCooldown <= 0) {
+    const ufoHeight = C.baseHoverHeight + racer.hoverY;
+    for (let gi = 0; gi < speedGates.length; gi++) {
+      const gate = speedGates[gi];
+      const distMeters = Math.abs(shortestProgressDelta(racer.t, gate.t)) * track.totalLength;
+      const latDist = Math.abs(racer.lateral - gate.lateral);
+      const vertDist = Math.abs(ufoHeight - gate.heightOffset);
+      const latWindow = racer.isPlayer ? gate.radius + 2.4 : gate.radius + 1.0;
+      const vertWindow = racer.isPlayer ? gate.radius + 2.2 : gate.radius + 1.0;
+      if (distMeters < 8.0 && latDist < latWindow && vertDist < vertWindow) {
+        racer.gateCooldown = 1.1;
+        racer.boostPadTimer = Math.max(racer.boostPadTimer, 1.45);
+        racer.boostEnergy = Math.min(100, racer.boostEnergy + 32);
+        const surgeTarget =
+          baseCap + (racer.isPlayer ? gate.speedBonus : gate.speedBonus * 0.5) * speedClass;
+        racer.speed = Math.max(racer.speed + (racer.isPlayer ? 15 : 7), surgeTarget);
+        if (racer.isPlayer) {
+          racer.styleScore += 180;
+        }
+        racer.squashX = 0.88;
+        racer.squashY = 1.16;
+        events.push({
+          type: 'slingshot-gate',
+          racerId: racer.id,
+          isPlayer: racer.isPlayer,
+          worldX: racer.worldX,
+          worldY: racer.worldY,
+          worldZ: racer.worldZ,
+          intensity: 1.0,
+        });
+        break;
       }
     }
   }

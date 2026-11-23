@@ -56,75 +56,128 @@ export function shortestProgressDelta(fromT: number, toT: number): number {
 }
 
 export const CIRCUITS: Record<CircuitId, CircuitDefinition> = {
-  // LV 1: GRAND SOLAR CANYON (~2,050m) — Sweeping sunlit sandstone mesas, twin bowls & solar warp chute
+  // LV 1: GRAND SOLAR CANYON (~3,500m) — 5-zone sunlit megacanyon with Twin-Route Sun Bowl,
+  // Desert Oasis River Plunge, Heliostat Solar Valley, Pinball Bumpers & Slingshot Turbo Gates!
   'solar-canyon': {
     id: 'solar-canyon',
     biome: 'canyon',
     name: 'Solar Canyon',
-    subtitle: 'Grand sunlit sandstone megacanyon, sweeping mesa bowls & solar warp chute',
+    subtitle: 'Grand 5-zone sandstone megacanyon, oasis river plunge, pinball bumpers & slingshot gates',
     laps: 2,
-    trackWidth: 36,
-    skyTopColor: '#22305e',
-    skyHorizonColor: '#f3a36b',
-    fogColor: '#e59a68',
-    terrainPrimary: '#b85c3b',
+    trackWidth: 40,
+    skyTopColor: '#1b2c5c',
+    skyHorizonColor: '#f7a562',
+    fogColor: '#e89d65',
+    terrainPrimary: '#bc5e3b',
     terrainAccent: '#863c2b',
     controlPoints: [
-      { x: 0, y: 10, z: 0, bank: 0, width: 36 },
-      { x: 0, y: 11, z: -185, bank: 0, width: 38 },
-      { x: 95, y: 20, z: -360, bank: -0.2, width: 46 },
-      { x: 265, y: 30, z: -410, bank: -0.25, width: 54 }, // Colossal Sun Bowl
-      { x: 420, y: 24, z: -300, bank: -0.18, width: 42 },
-      { x: 445, y: 12, z: -120, bank: 0.14, width: 32 }, // Canyon Narrows
-      { x: 315, y: 9, z: 10, bank: 0.22, width: 30 },
-      { x: 265, y: 16, z: 155, bank: -0.2, width: 44 },
-      { x: 375, y: 24, z: 295, bank: -0.24, width: 52 }, // Sandstone Amphitheater
-      { x: 245, y: 28, z: 405, bank: -0.2, width: 46 },
-      { x: 85, y: 19, z: 335, bank: -0.14, width: 38 },
-      { x: -30, y: 12, z: 205, bank: 0.1, width: 36 },
+      // Zone 1: Wide Grand Solar Launch Straight -> Red-Rock Arch Climb
+      { x: 0, y: 12, z: 0, bank: 0, width: 42 },
+      { x: 0, y: 14, z: -215, bank: 0, width: 40 },
+      { x: 92, y: 24, z: -425, bank: -0.18, width: 44 },
+      // Zone 2: Colossal 58m Banked Sun Bowl & Twin-Route Mesa Plaza
+      { x: 265, y: 38, z: -565, bank: -0.24, width: 54 },
+      { x: 480, y: 46, z: -525, bank: -0.26, width: 58 },
+      { x: 635, y: 38, z: -360, bank: -0.22, width: 52 },
+      // Zone 3: Downhill Plunge into Shimmering Desert Oasis River Basin
+      { x: 675, y: 20, z: -155, bank: 0.14, width: 38 },
+      { x: 555, y: 8, z: 22, bank: 0.22, width: 34 },
+      { x: 438, y: 10, z: 180, bank: -0.16, width: 46 },
+      // Zone 4: Heliostat Solar Dish Valley & Rhythmic Canyon S-Bends
+      { x: 530, y: 20, z: 368, bank: -0.22, width: 42 },
+      { x: 418, y: 32, z: 535, bank: -0.2, width: 32 },
+      { x: 242, y: 26, z: 485, bank: 0.2, width: 30 },
+      { x: 132, y: 34, z: 615, bank: -0.24, width: 48 },
+      // Zone 5: Southern Monument Basin & Wide Spectator Finish Straight
+      { x: -55, y: 40, z: 630, bank: -0.25, width: 54 },
+      { x: -230, y: 30, z: 540, bank: -0.22, width: 48 },
+      { x: -260, y: 20, z: 360, bank: -0.16, width: 40 },
+      { x: -150, y: 14, z: 225, bank: -0.12, width: 40 },
+      { x: -14, y: 12, z: 170, bank: -0.04, width: 42 },
     ],
     boostPads: [
-      { id: 'sc-bp-1', t: 0.05, lateral: 0, width: 10, length: 20 },
-      { id: 'sc-bp-2', t: 0.16, lateral: -6.5, width: 10, length: 20 },
-      { id: 'sc-bp-3', t: 0.30, lateral: 5.0, width: 9.5, length: 19 },
-      { id: 'sc-bp-4', t: 0.45, lateral: 0, width: 9.5, length: 19 },
-      { id: 'sc-bp-5', t: 0.62, lateral: -6.0, width: 10, length: 20 },
-      { id: 'sc-bp-6', t: 0.78, lateral: 5.0, width: 10, length: 20 },
-      { id: 'sc-bp-7', t: 0.92, lateral: 0, width: 10.5, length: 20 },
+      // Welcoming opening boost pad visible straight ahead from the starting grid
+      { id: 'sc-bp-1', t: 0.036, lateral: 0, width: 11, length: 22 },
+      // Apex-exit booster climbing toward the Sun Bowl
+      { id: 'sc-bp-2', t: 0.145, lateral: -6.0, width: 10.5, length: 21 },
+      // Twin-route Sun Bowl LEFT high-speed double-boost chain
+      { id: 'sc-bp-3', t: 0.195, lateral: -12.0, width: 10.5, length: 21 },
+      { id: 'sc-bp-4', t: 0.250, lateral: -10.5, width: 10.5, length: 21 },
+      // Oasis River exit slingshot into Oasis Lagoon Plaza
+      { id: 'sc-bp-5', t: 0.452, lateral: -7.0, width: 10.5, length: 21 },
+      // Heliostat Solar Valley climb booster
+      { id: 'sc-bp-6', t: 0.548, lateral: 0, width: 10, length: 20 },
+      // Canyon S-bend exit booster
+      { id: 'sc-bp-7', t: 0.618, lateral: 5.5, width: 10, length: 20 },
+      // Southern Monument Basin RIGHT fast-lane booster
+      { id: 'sc-bp-8', t: 0.772, lateral: 11.5, width: 10.5, length: 21 },
+      // Spectator Finish Straight finale booster
+      { id: 'sc-bp-9', t: 0.954, lateral: 0, width: 11.5, length: 22 },
     ],
     jumpRamps: [
-      { id: 'sc-rmp-1', t: 0.11, lateral: 4.5, width: 12, length: 18, launchVel: 23.5, speedBoost: 15 },
-      { id: 'sc-rmp-2', t: 0.54, lateral: 0, width: 12.5, length: 18, launchVel: 24.5, speedBoost: 16 },
-      { id: 'sc-rmp-3', t: 0.84, lateral: -4.5, width: 12, length: 18, launchVel: 24.0, speedBoost: 15 },
+      { id: 'sc-rmp-1', t: 0.088, lateral: 5.5, width: 13, length: 19, launchVel: 24.0, speedBoost: 16 },
+      { id: 'sc-rmp-2', t: 0.484, lateral: 8.5, width: 13.5, length: 19, launchVel: 25.0, speedBoost: 17 },
+      { id: 'sc-rmp-3', t: 0.778, lateral: -11.5, width: 13.5, length: 19, launchVel: 24.8, speedBoost: 16 },
     ],
     updrafts: [
-      { id: 'sc-up-1', t: 0.23, lateral: 9.0, radius: 7.5, liftVel: 26.5, colorHex: 0x2df9f2 },
-      { id: 'sc-up-2', t: 0.70, lateral: -9.0, radius: 7.5, liftVel: 26.5, colorHex: 0xffd166 },
+      { id: 'sc-up-1', t: 0.222, lateral: 12.5, radius: 8.2, liftVel: 27.5, colorHex: 0x2df9f2 },
+      { id: 'sc-up-2', t: 0.695, lateral: -9.5, radius: 8.0, liftVel: 27.0, colorHex: 0xffd166 },
     ],
     warpTunnels: [
-      { id: 'sc-wt-1', tStart: 0.36, tEnd: 0.42, ringCount: 4, speedBonus: 24, colorHex: 0xffb703 },
+      { id: 'sc-wt-1', tStart: 0.335, tEnd: 0.382, ringCount: 5, speedBonus: 25, colorHex: 0xffb703 },
+      { id: 'sc-wt-2', tStart: 0.895, tEnd: 0.935, ringCount: 5, speedBonus: 26, colorHex: 0x2df9f2 },
     ],
     rings: [
-      { id: 'sc-r-1', t: 0.03, lateral: 0, heightOffset: 2.2, radius: 2.9, elevated: false },
-      { id: 'sc-r-2', t: 0.08, lateral: 4.5, heightOffset: 2.2, radius: 2.9, elevated: false },
-      { id: 'sc-r-3', t: 0.132, lateral: 4.5, heightOffset: 6.5, radius: 3.3, elevated: true },
-      { id: 'sc-r-4', t: 0.20, lateral: -6.0, heightOffset: 2.2, radius: 2.9, elevated: false },
-      { id: 'sc-r-5', t: 0.255, lateral: 9.0, heightOffset: 7.8, radius: 3.4, elevated: true },
-      { id: 'sc-r-6', t: 0.33, lateral: 2.0, heightOffset: 2.2, radius: 2.9, elevated: false },
-      { id: 'sc-r-7', t: 0.39, lateral: 0, heightOffset: 2.2, radius: 3.0, elevated: false },
-      { id: 'sc-r-8', t: 0.49, lateral: -3.5, heightOffset: 2.2, radius: 2.9, elevated: false },
-      { id: 'sc-r-9', t: 0.562, lateral: 0, heightOffset: 7.0, radius: 3.3, elevated: true },
-      { id: 'sc-r-10', t: 0.65, lateral: -5.5, heightOffset: 2.2, radius: 2.9, elevated: false },
-      { id: 'sc-r-11', t: 0.725, lateral: -9.0, heightOffset: 7.8, radius: 3.4, elevated: true },
-      { id: 'sc-r-12', t: 0.80, lateral: 3.5, heightOffset: 2.2, radius: 2.9, elevated: false },
-      { id: 'sc-r-13', t: 0.862, lateral: -4.5, heightOffset: 6.8, radius: 3.3, elevated: true },
-      { id: 'sc-r-14', t: 0.94, lateral: 0, heightOffset: 2.2, radius: 2.9, elevated: false },
+      { id: 'sc-r-1', t: 0.025, lateral: 0, heightOffset: 2.2, radius: 3.0, elevated: false },
+      { id: 'sc-r-2', t: 0.064, lateral: 4.5, heightOffset: 2.2, radius: 3.0, elevated: false },
+      { id: 'sc-r-3', t: 0.102, lateral: 5.5, heightOffset: 6.6, radius: 3.4, elevated: true },
+      { id: 'sc-r-4', t: 0.165, lateral: -7.5, heightOffset: 2.2, radius: 3.0, elevated: false },
+      { id: 'sc-r-5', t: 0.218, lateral: -11.5, heightOffset: 2.2, radius: 3.0, elevated: false },
+      { id: 'sc-r-6', t: 0.238, lateral: 12.5, heightOffset: 8.0, radius: 3.5, elevated: true },
+      { id: 'sc-r-7', t: 0.296, lateral: 0, heightOffset: 2.2, radius: 3.0, elevated: false },
+      { id: 'sc-r-8', t: 0.360, lateral: 0, heightOffset: 2.4, radius: 3.1, elevated: false },
+      { id: 'sc-r-9', t: 0.436, lateral: -6.5, heightOffset: 2.2, radius: 3.0, elevated: false },
+      { id: 'sc-r-10', t: 0.498, lateral: 8.5, heightOffset: 7.0, radius: 3.5, elevated: true },
+      { id: 'sc-r-11', t: 0.562, lateral: 4.0, heightOffset: 2.2, radius: 3.0, elevated: false },
+      { id: 'sc-r-12', t: 0.634, lateral: 5.0, heightOffset: 2.2, radius: 3.0, elevated: false },
+      { id: 'sc-r-13', t: 0.712, lateral: -9.5, heightOffset: 8.0, radius: 3.5, elevated: true },
+      { id: 'sc-r-14', t: 0.768, lateral: 11.5, heightOffset: 2.2, radius: 3.0, elevated: false },
+      { id: 'sc-r-15', t: 0.793, lateral: -11.5, heightOffset: 7.0, radius: 3.5, elevated: true },
+      { id: 'sc-r-16', t: 0.872, lateral: 0, heightOffset: 2.2, radius: 3.0, elevated: false },
+      { id: 'sc-r-17', t: 0.918, lateral: 0, heightOffset: 2.4, radius: 3.1, elevated: false },
+      { id: 'sc-r-18', t: 0.978, lateral: 0, heightOffset: 2.2, radius: 3.0, elevated: false },
     ],
     hazards: [
-      { id: 'sc-hz-1', t: 0.28, lateral: -6.0, width: 9.0, phaseOffset: 0.0, cycleDuration: 4.4 },
-      { id: 'sc-hz-2', t: 0.48, lateral: 0, width: 9.0, phaseOffset: 1.2, cycleDuration: 4.2, moveAmplitude: 7.5, moveSpeed: 1.1 },
-      { id: 'sc-hz-3', t: 0.68, lateral: 6.5, width: 9.0, phaseOffset: 2.1, cycleDuration: 4.3 },
-      { id: 'sc-hz-4', t: 0.89, lateral: -4.5, width: 9.0, phaseOffset: 0.8, cycleDuration: 4.2 },
+      // Level 1 activates only the first 2 slow-telegraphed EMP barriers, widely spaced!
+      { id: 'sc-hz-1', t: 0.580, lateral: -6.0, width: 8.5, phaseOffset: 0.0, cycleDuration: 4.8 },
+      { id: 'sc-hz-2', t: 0.852, lateral: 0, width: 8.5, phaseOffset: 1.4, cycleDuration: 4.8, moveAmplitude: 6.5, moveSpeed: 0.9 },
+      { id: 'sc-hz-3', t: 0.318, lateral: -4.0, width: 8.5, phaseOffset: 2.0, cycleDuration: 4.5 },
+      { id: 'sc-hz-4', t: 0.715, lateral: 5.5, width: 8.5, phaseOffset: 0.8, cycleDuration: 4.5 },
+    ],
+    obstacles: [
+      // Wide Sun Bowl central sandstone split-pillar creating twin 22m+ passing lanes
+      { id: 'sc-ob-1', kind: 'rock-pillar', t: 0.206, lateral: 0, radius: 3.2, height: 13.5 },
+      // Fun Solar Pinball Bumper Orbs in Sun Bowl exit (bouncy +15% boost & +100 pts!)
+      { id: 'sc-ob-2', kind: 'bumper-orb', t: 0.288, lateral: -6.0, radius: 2.5, height: 3.4, bounceForce: 24 },
+      { id: 'sc-ob-3', kind: 'bumper-orb', t: 0.308, lateral: 6.0, radius: 2.5, height: 3.4, bounceForce: 24 },
+      // Patrolling Oasis Canyon Recon Drone (steerable or hop-overable!)
+      { id: 'sc-ob-4', kind: 'hover-drone', t: 0.422, lateral: 0, radius: 2.2, height: 3.0, moveAmplitude: 7.0, moveSpeed: 1.0, phaseOffset: 0.4 },
+      // Oasis Lagoon Pinball Bumper opposite Jump Ramp #2
+      { id: 'sc-ob-5', kind: 'bumper-orb', t: 0.484, lateral: -9.5, radius: 2.5, height: 3.4, bounceForce: 24 },
+      // Heliostat Valley Patrolling Recon Drone
+      { id: 'sc-ob-6', kind: 'hover-drone', t: 0.652, lateral: 0, radius: 2.1, height: 3.0, moveAmplitude: 6.0, moveSpeed: 0.95, phaseOffset: 1.8 },
+      // Southern Monument Basin split-pillar (54m wide -> huge left ramp & right boost lanes!)
+      { id: 'sc-ob-7', kind: 'rock-pillar', t: 0.752, lateral: 1.0, radius: 3.2, height: 13.0 },
+      // Monument Basin Pinball Bumper on right exit
+      { id: 'sc-ob-8', kind: 'bumper-orb', t: 0.818, lateral: 9.0, radius: 2.5, height: 3.4, bounceForce: 24 },
+    ],
+    speedGates: [
+      // Floating Slingshot Turbo Gates rewarding aerial jumps, updraft chains & sprint lines!
+      { id: 'sc-sg-1', t: 0.114, lateral: 5.5, heightOffset: 4.8, radius: 5.4, speedBonus: 22, colorHex: 0x2df9f2 },
+      { id: 'sc-sg-2', t: 0.258, lateral: 11.5, heightOffset: 5.6, radius: 5.6, speedBonus: 22, colorHex: 0xffd166 },
+      { id: 'sc-sg-3', t: 0.512, lateral: 8.5, heightOffset: 4.8, radius: 5.4, speedBonus: 22, colorHex: 0x2df9f2 },
+      { id: 'sc-sg-4', t: 0.806, lateral: -11.0, heightOffset: 5.0, radius: 5.4, speedBonus: 22, colorHex: 0xffd166 },
+      { id: 'sc-sg-5', t: 0.968, lateral: 0, heightOffset: 2.6, radius: 5.6, speedBonus: 24, colorHex: 0x2df9f2 },
     ],
   },
 
