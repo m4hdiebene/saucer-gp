@@ -158,7 +158,18 @@ export interface ShockHazardDef {
   moveSpeed?: number; // oscillation speed (rad/s)
 }
 
-export type TrackObstacleKind = 'rock-pillar' | 'hover-drone' | 'bumper-orb';
+export type TrackObstacleKind =
+  | 'rock-pillar'
+  | 'hover-drone'
+  | 'bumper-orb'
+  | 'ice-spire'
+  | 'frost-crystal'
+  | 'spore-stalk'
+  | 'spore-pad'
+  | 'pollen-orb'
+  | 'meteor-spire'
+  | 'gravity-well'
+  | 'star-core';
 
 export interface TrackObstacleDef {
   id: string;
@@ -184,6 +195,45 @@ export interface SpeedGateDef {
   colorHex: number;
 }
 
+export interface IcePatchDef {
+  id: string;
+  tStart: number; // track progress start [0, 1)
+  tEnd: number; // track progress end [0, 1)
+  lateral: number; // center lateral offset (m)
+  width: number; // lateral width of blue-ice sheet (m)
+  speedBonus: number; // extra low-friction ice-glide speed surge (m/s)
+}
+
+export interface WindZoneDef {
+  id: string;
+  tStart: number; // track progress start [0, 1)
+  tEnd: number; // track progress end [0, 1)
+  force: number; // signed lateral alpine crosswind acceleration (m/s^2, +right / -left)
+  colorHex: number;
+}
+
+export interface NectarStreamDef {
+  id: string;
+  tStart: number; // track progress start [0, 1)
+  tEnd: number; // track progress end [0, 1)
+  lateral: number; // center lateral offset (m)
+  width: number; // width of luminous nectar flow ribbon (m)
+  speedBonus: number; // forward flow speed surge (m/s)
+  boostRegenPerSec: number; // extra plasma boost energy recharged per second
+  colorHex: number;
+}
+
+export interface LowGravityZoneDef {
+  id: string;
+  tStart: number; // track progress start [0, 1)
+  tEnd: number; // track progress end [0, 1)
+  lateral: number; // center lateral offset (m)
+  width: number; // width of zero-G antigrav sky strip (m)
+  gravityScale: number; // multiplier applied to airborne gravity (e.g. 0.46 = floaty moon-jump!)
+  speedBonus: number; // forward starlight glide speed bonus (m/s)
+  colorHex: number;
+}
+
 export interface CircuitDefinition {
   id: CircuitId;
   biome: BiomeTheme;
@@ -201,6 +251,10 @@ export interface CircuitDefinition {
   hazards: ShockHazardDef[];
   obstacles?: TrackObstacleDef[];
   speedGates?: SpeedGateDef[];
+  icePatches?: IcePatchDef[];
+  windZones?: WindZoneDef[];
+  nectarStreams?: NectarStreamDef[];
+  lowGravityZones?: LowGravityZoneDef[];
   skyTopColor: string;
   skyHorizonColor: string;
   fogColor: string;
@@ -255,6 +309,12 @@ export interface RacerState {
   warpCooldown: number; // prevents spam-trigger inside warp tunnel
   bumperCooldown: number; // prevents multi-frame bounce spam on pinball bumpers
   gateCooldown: number; // prevents double-trigger on slingshot turbo gates
+  isOnIce: boolean; // currently gliding on a blue-ice slip-glide sheet
+  iceCalloutCooldown: number; // rate-limits ICE GLIDE callout popups
+  isInNectar: boolean; // currently riding a glowing bioluminescent nectar flow stream
+  nectarCalloutCooldown: number; // rate-limits NECTAR SURGE callout popups
+  isInLowGravity: boolean; // currently floating through a Zero-G cosmic sky strip
+  lowGravityCalloutCooldown: number; // rate-limits ZERO-G FLOAT callout popups
   hitFlashTimer: number;
   shockSlowTimer: number;
   squashX: number;

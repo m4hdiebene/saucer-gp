@@ -91,6 +91,67 @@ export function getObstacleLateral(
   return obstacle.lateral + Math.sin(raceTime * speed + phase) * amp;
 }
 
+export function isProgressInRange(t: number, tStart: number, tEnd: number): boolean {
+  return tStart <= tEnd ? t >= tStart && t <= tEnd : t >= tStart || t <= tEnd;
+}
+
+export function sampleIcePatch(track: BakedTrack, t: number, lateral: number) {
+  const patches = track.def.icePatches;
+  if (!patches || patches.length === 0) return null;
+  for (let i = 0; i < patches.length; i++) {
+    const patch = patches[i];
+    if (
+      isProgressInRange(t, patch.tStart, patch.tEnd) &&
+      Math.abs(lateral - patch.lateral) <= patch.width * 0.54
+    ) {
+      return patch;
+    }
+  }
+  return null;
+}
+
+export function sampleWindZone(track: BakedTrack, t: number) {
+  const zones = track.def.windZones;
+  if (!zones || zones.length === 0) return null;
+  for (let i = 0; i < zones.length; i++) {
+    const zone = zones[i];
+    if (isProgressInRange(t, zone.tStart, zone.tEnd)) {
+      return zone;
+    }
+  }
+  return null;
+}
+
+export function sampleNectarStream(track: BakedTrack, t: number, lateral: number) {
+  const streams = track.def.nectarStreams;
+  if (!streams || streams.length === 0) return null;
+  for (let i = 0; i < streams.length; i++) {
+    const stream = streams[i];
+    if (
+      isProgressInRange(t, stream.tStart, stream.tEnd) &&
+      Math.abs(lateral - stream.lateral) <= stream.width * 0.54
+    ) {
+      return stream;
+    }
+  }
+  return null;
+}
+
+export function sampleLowGravityZone(track: BakedTrack, t: number, lateral: number) {
+  const zones = track.def.lowGravityZones;
+  if (!zones || zones.length === 0) return null;
+  for (let i = 0; i < zones.length; i++) {
+    const zone = zones[i];
+    if (
+      isProgressInRange(t, zone.tStart, zone.tEnd) &&
+      Math.abs(lateral - zone.lateral) <= zone.width * 0.56
+    ) {
+      return zone;
+    }
+  }
+  return null;
+}
+
 export interface PhysicsEvent {
   type:
     | 'boost-start'
@@ -100,6 +161,14 @@ export interface PhysicsEvent {
     | 'warp-surge'
     | 'slingshot-gate'
     | 'bumper-bounce'
+    | 'crystal-shatter'
+    | 'ice-glide'
+    | 'spore-bounce'
+    | 'pollen-burst'
+    | 'nectar-surge'
+    | 'zero-g-zone'
+    | 'gravity-slingshot'
+    | 'star-core-nova'
     | 'obstacle-hit'
     | 'side-dash'
     | 'ring-pickup'
@@ -123,6 +192,7 @@ export interface PhysicsEvent {
   normalY?: number;
   normalZ?: number;
   ringId?: string;
+  obstacleId?: string;
   checkpointIndex?: number;
   newLap?: number;
 }
@@ -176,13 +246,16 @@ export function computeAiInput(
   let boostHeld = false;
   let hopJustPressed = false;
 
-  // Launch ramp tightens across levels (gentle 2.5s on Lv1 -> snappy 0.8s on Lv8)
+  // Launch ramp tightens across levels (gentle 2.5s on Lv1 -> crisp 1.85s Standard -> sharp 1.35s Challenger -> snappy 0.8s Lv8)
   const isEasyMap = level.tier === 'Easy';
+  const isStandardMap = level.tier === 'Standard';
+  const isChallengerMap = level.tier === 'Challenger';
   const rampSec = Math.max(0.5, level.aiLaunchRampSec);
-  const launchFloor = isEasyMap ? 0.44 : 0.52;
+  const launchFloor = isEasyMap ? 0.44 : isStandardMap ? 0.56 : isChallengerMap ? 0.62 : 0.64;
   const launchScale = clamp(launchFloor + (raceTime / rampSec) * (1 - launchFloor), launchFloor, 1.0);
 
-  // Level-aware rubber-banding: welcoming & forgiving on Easy maps, tighter racing on Lv5–8
+  // Level-aware rubber-banding:
+  // Easy = welcoming; Standard = lively fair pack; Challenger = crisp tactical pressure without unfair runaway!
   const gapToPlayer = racer.totalProgress - playerProgress;
   const highTierFactor = clamp((level.number - 1) / 7, 0, 1);
   let paceAdjust = 1.0;
@@ -193,6 +266,26 @@ export function computeAiInput(
       paceAdjust = 0.86;
     } else if (gapToPlayer < -0.22) {
       paceAdjust = 1.01;
+    }
+  } else if (isStandardMap) {
+    if (gapToPlayer > 0.085) {
+      paceAdjust = 0.85;
+    } else if (gapToPlayer > 0.04) {
+      paceAdjust = 0.93;
+    } else if (gapToPlayer < -0.14) {
+      paceAdjust = 1.05;
+    } else if (gapToPlayer < -0.05) {
+      paceAdjust = 1.02;
+    }
+  } else if (isChallengerMap) {
+    if (gapToPlayer > 0.095) {
+      paceAdjust = 0.88;
+    } else if (gapToPlayer > 0.05) {
+      paceAdjust = 0.95;
+    } else if (gapToPlayer < -0.12) {
+      paceAdjust = 1.07;
+    } else if (gapToPlayer < -0.04) {
+      paceAdjust = 1.03;
     }
   } else if (gapToPlayer > 0.09) {
     paceAdjust = 0.83 + highTierFactor * 0.1;
@@ -205,10 +298,19 @@ export function computeAiInput(
   const boostAggro = level.aiBoostAggression;
   const boostThresholdOffset = (1 - boostAggro) * 20;
   const burstScale = clamp(boostAggro, 0.35, 1.38);
-  const canBoostAhead = !isEasyMap || gapToPlayer < -0.01;
+  const canBoostAhead = isEasyMap
+    ? gapToPlayer < -0.01
+    : isStandardMap
+    ? gapToPlayer < 0.035
+    : isChallengerMap
+    ? gapToPlayer < 0.055
+    : true;
 
   if (racer.aiDecisionTimer <= 0) {
-    racer.aiDecisionTimer = Math.max(0.18, (0.38 - highTierFactor * 0.12) + Math.random() * 0.22);
+    racer.aiDecisionTimer = Math.max(
+      0.16,
+      (isChallengerMap ? 0.28 : 0.38 - highTierFactor * 0.12) + Math.random() * 0.2,
+    );
     const policy = racer.aiPolicy ?? 'apex-hunter';
 
     if (policy === 'apex-hunter') {
@@ -344,14 +446,30 @@ export function computeAiInput(
     }
   }
 
-  // Active obstacle avoidance (sandstone pillars, patrolling hover drones, pinball bumpers)
+  // Active obstacle interaction: dodge solid spires/pillars/stalks/drones, seek Crystals, Pollen, Spore-Pads, Star-Cores & Gravity Wells!
   const obstacles = track.def.obstacles;
   if (obstacles && obstacles.length > 0) {
     for (let oi = 0; oi < obstacles.length; oi++) {
       const ob = obstacles[oi];
       const dMeters = shortestProgressDelta(racer.t, ob.t) * track.totalLength;
-      if (dMeters > 4 && dMeters < 78) {
+      const lookRange = isChallengerMap ? 88 : 78;
+      if (dMeters > 4 && dMeters < lookRange) {
         const obLat = getObstacleLateral(ob, raceTime);
+        if (
+          ob.kind === 'frost-crystal' ||
+          ob.kind === 'pollen-orb' ||
+          ob.kind === 'spore-pad' ||
+          ob.kind === 'star-core' ||
+          ob.kind === 'gravity-well'
+        ) {
+          // Standard+ rivals opportunistically route through smashable cores, spore pads & gravity slingshot wells!
+          const seekLat = isChallengerMap ? 12.5 : 9.5;
+          const seekDist = isChallengerMap ? 68 : 58;
+          if (!isEasyMap && dMeters < seekDist && Math.abs(racer.lateral - obLat) < seekLat) {
+            racer.aiTargetLane = clamp(obLat, -halfSafe, halfSafe);
+          }
+          continue;
+        }
         const safeMargin = ob.radius + (ob.kind === 'bumper-orb' ? 3.2 : 5.2);
         if (Math.abs(racer.aiTargetLane - obLat) < safeMargin || Math.abs(racer.lateral - obLat) < safeMargin) {
           // Pick whichever open side has more room on the road
@@ -368,18 +486,19 @@ export function computeAiInput(
     }
   }
 
-  // Dynamic & moving hazard avoidance or hover-hop telegraph reaction
+  // Dynamic & moving hazard avoidance or hover-hop telegraph reaction (Challenger reacts earlier!)
   const activeHazardLimit = Math.min(track.def.hazards.length, level.hazardCount);
+  const hazardLookAhead = isChallengerMap ? 0.036 : 0.028;
   for (let hi = 0; hi < activeHazardLimit; hi++) {
     const hz = track.def.hazards[hi];
     const d = shortestProgressDelta(racer.t, hz.t);
-    if (d > 0.002 && d < 0.028) {
+    if (d > 0.002 && d < hazardLookAhead) {
       const { phase } = getHazardPhase(hz, raceTime, level.hazardCycleSpeed);
       const hzLat = getHazardLateral(hz, raceTime, level.hazardCycleSpeed);
       const effWidth = hz.width * level.hazardWidthScale;
       const inPath = Math.abs(racer.lateral - hzLat) < effWidth * 0.58;
       if (inPath && (phase === 'active' || phase === 'telegraph')) {
-        if (d < 0.013 && racer.hopCooldown <= 0 && racer.hoverY < 0.1) {
+        if (d < (isChallengerMap ? 0.015 : 0.013) && racer.hopCooldown <= 0 && racer.hoverY < 0.1) {
           hopJustPressed = true;
         } else {
           racer.aiTargetLane = hzLat >= 0 ? -halfSafe * 0.65 : halfSafe * 0.65;
@@ -388,18 +507,39 @@ export function computeAiInput(
     }
   }
 
+  // Alpine crosswind counter-steering so rivals hold sharp lines through blizzard gusts
+  const activeWind = sampleWindZone(track, racer.t);
+  const windCounterSteer = activeWind ? clamp(-activeWind.force * 0.012, -0.28, 0.28) : 0;
+
   const laneError = clamp(racer.aiTargetLane, -halfSafe, halfSafe) - racer.lateral;
-  const steer = clamp(laneError * 0.18, -0.85, 0.85);
+  const steerGain = isChallengerMap ? 0.22 : isStandardMap ? 0.2 : 0.18;
+  const steer = clamp(laneError * steerGain + windCounterSteer, -0.9, 0.9);
 
   if (isEasyMap && Math.abs(aheadFrame.curvature) > 0.025) {
     throttle = 0.84;
+  } else if (isStandardMap && Math.abs(aheadFrame.curvature) > 0.036) {
+    throttle = 0.90;
+  } else if (isChallengerMap && Math.abs(aheadFrame.curvature) > 0.042) {
+    throttle = 0.93;
   } else if (racer.aiPolicy === 'apex-hunter' && Math.abs(aheadFrame.curvature) > 0.04) {
     throttle = 0.85 + highTierFactor * 0.08;
   }
 
-  const maxAiThrottle = isEasyMap ? 0.88 : 0.93 + highTierFactor * 0.07;
+  const maxAiThrottle = isEasyMap
+    ? 0.88
+    : isStandardMap
+    ? 0.95
+    : isChallengerMap
+    ? 0.985
+    : 0.93 + highTierFactor * 0.07;
   throttle = clamp(throttle * racer.skillFactor * paceAdjust * launchScale, 0.42, maxAiThrottle);
-  const boostMinTime = isEasyMap ? 4.5 : Math.max(1.2, 2.6 - highTierFactor * 1.2);
+  const boostMinTime = isEasyMap
+    ? 4.5
+    : isStandardMap
+    ? 2.4
+    : isChallengerMap
+    ? 1.85
+    : Math.max(1.2, 2.6 - highTierFactor * 1.2);
   boostHeld =
     canBoostAhead &&
     racer.aiBoostBurstTimer > 0 &&
@@ -444,6 +584,11 @@ export function stepRacerPhysics(
   if (racer.bumpCooldown > 0) racer.bumpCooldown = Math.max(0, racer.bumpCooldown - dt);
   if (racer.bumperCooldown > 0) racer.bumperCooldown = Math.max(0, racer.bumperCooldown - dt);
   if (racer.gateCooldown > 0) racer.gateCooldown = Math.max(0, racer.gateCooldown - dt);
+  if (racer.iceCalloutCooldown > 0) racer.iceCalloutCooldown = Math.max(0, racer.iceCalloutCooldown - dt);
+  if (racer.nectarCalloutCooldown > 0) racer.nectarCalloutCooldown = Math.max(0, racer.nectarCalloutCooldown - dt);
+  if (racer.lowGravityCalloutCooldown > 0) {
+    racer.lowGravityCalloutCooldown = Math.max(0, racer.lowGravityCalloutCooldown - dt);
+  }
 
   if (racer.impactTimer > 0) {
     racer.impactTimer = Math.max(0, racer.impactTimer - dt);
@@ -453,6 +598,11 @@ export function stepRacerPhysics(
       racer.impactStrength = 0;
     }
   }
+
+  // Zero-G Low-Gravity Cosmic Sky Strip detection (applies up to 16m high so moon-jumps soar in low gravity!)
+  const activeLowGrav = racer.hoverY < 16.0 ? sampleLowGravityZone(track, racer.t, racer.lateral) : null;
+  const wasInLowGravity = racer.isInLowGravity;
+  racer.isInLowGravity = activeLowGrav !== null;
 
   // Buffer hover-hop input so slightly early presses fire on the first legal frame
   if (input.hopJustPressed) {
@@ -479,19 +629,20 @@ export function stepRacerPhysics(
     });
   }
 
-  // Vertical hop / jump-ramp arc + Anti-Gravity Hover Glide when holding Shift while descending!
+  // Vertical hop / jump-ramp arc + Anti-Gravity Hover Glide + Zero-G Cosmic Sky Strip Moon-Gravity!
   const wasAirborne = racer.hoverY > 0.05;
   if (racer.hoverY > 0 || racer.vy > 0) {
     const isGliding = Boolean(input.hopHeld) && racer.vy < 0 && racer.hoverY > 0.3;
-    const gravityMult = isGliding
+    const baseGravityMult = isGliding
       ? isFree
         ? C.glideGravityScale * 0.72
         : C.glideGravityScale
       : 1.0;
+    const gravityMult = activeLowGrav ? baseGravityMult * activeLowGrav.gravityScale : baseGravityMult;
     racer.hoverY += racer.vy * dt;
     racer.vy -= C.hopGravity * gravityMult * dt;
     if (isGliding) {
-      racer.vy = Math.max(racer.vy, -5.2);
+      racer.vy = Math.max(racer.vy, activeLowGrav ? -3.4 : -5.2);
     }
     if (racer.hoverY <= 0) {
       racer.hoverY = 0;
@@ -561,7 +712,19 @@ export function stepRacerPhysics(
     racer.boostEnergy = Math.min(100, racer.boostEnergy + regenRate * dt);
   }
 
-  // Target speed calculation scaled by level speed class, UFO chassis class & AI boost tier
+  // Glacial Blue-Ice Slip-Glide Zone & Biolume Nectar Flow Current detection!
+  const activeIcePatch = racer.hoverY < 1.25 ? sampleIcePatch(track, racer.t, racer.lateral) : null;
+  const wasOnIce = racer.isOnIce;
+  racer.isOnIce = activeIcePatch !== null;
+
+  const activeNectar = racer.hoverY < 1.65 ? sampleNectarStream(track, racer.t, racer.lateral) : null;
+  const wasInNectar = racer.isInNectar;
+  racer.isInNectar = activeNectar !== null;
+  if (activeNectar) {
+    racer.boostEnergy = Math.min(100, racer.boostEnergy + activeNectar.boostRegenPerSec * dt);
+  }
+
+  // Target speed calculation scaled by level speed class, UFO chassis class, AI boost tier, Blue-Ice & Nectar!
   const aiBoostScale = clamp(0.45 + level.aiBoostAggression * 0.3, 0.5, 0.86);
   const baseCap =
     C.maxBaseSpeed * speedClass * spec.speedMult * (racer.isPlayer ? 1.0 : racer.skillFactor);
@@ -572,13 +735,28 @@ export function stepRacerPhysics(
     racer.boostPadTimer > 0
       ? C.padExtraSpeed * speedClass * (racer.isPlayer ? 1.0 : aiBoostScale)
       : 0;
+  const iceSpeedAdd = activeIcePatch
+    ? activeIcePatch.speedBonus * speedClass * (racer.isPlayer ? 1.0 : 0.65)
+    : 0;
+  const nectarSpeedAdd = activeNectar
+    ? activeNectar.speedBonus * speedClass * (racer.isPlayer ? 1.0 : 0.65)
+    : 0;
+  const lowGravSpeedAdd = activeLowGrav
+    ? activeLowGrav.speedBonus * speedClass * (racer.isPlayer ? 1.0 : 0.65)
+    : 0;
   const shockMult = racer.shockSlowTimer > 0 ? 0.72 : 1.0;
-  const topSpeed = (baseCap + boostAdd + padAdd) * shockMult;
+  const topSpeed =
+    (baseCap + boostAdd + padAdd + iceSpeedAdd + nectarSpeedAdd + lowGravSpeedAdd) * shockMult;
 
   // Longitudinal speed integration
   const activeThrottle = racer.finished ? 0.45 : input.throttle;
   if (activeThrottle > 0.05) {
-    const thrustBoost = racer.isBoosting || racer.boostPadTimer > 0 ? 1.85 : 1.0;
+    const thrustBoost =
+      racer.isBoosting || racer.boostPadTimer > 0
+        ? 1.85
+        : activeIcePatch || activeNectar || activeLowGrav
+        ? 1.32
+        : 1.0;
     const accel = C.accelRate * speedClass * activeThrottle * thrustBoost;
     if (racer.speed < topSpeed) {
       racer.speed = Math.min(topSpeed, racer.speed + accel * dt);
@@ -589,7 +767,7 @@ export function stepRacerPhysics(
     racer.speed = Math.max(-18, racer.speed + C.brakeRate * activeThrottle * dt);
   } else {
     if (racer.speed > 0) {
-      racer.speed = Math.max(0, racer.speed - C.coastDrag * dt);
+      racer.speed = Math.max(0, racer.speed - C.coastDrag * (activeIcePatch ? 0.45 : 1.0) * dt);
     } else {
       racer.speed = Math.min(0, racer.speed + C.coastDrag * dt);
     }
@@ -606,19 +784,35 @@ export function stepRacerPhysics(
   const currFrame = sampleTrackFrame(track, nextT);
   const deckHalfTrack = currFrame.width * 0.5 - 2.1;
 
-  // Smooth, stable lateral steering + gentle curve feel (scaled by UFO agility)
+  // Smooth, stable lateral steering + curve feel + Alpine Blizzard Crosswind gusts + Nectar Flow stabilization!
   const centrifugalPush = -frame.curvature * racer.speed * 0.14;
   const steerForce = input.steer * C.steerAccel * spec.steerMult;
-  racer.lateralVel += (steerForce + centrifugalPush) * dt;
   const dashBaseCd = (isFree ? 0.45 : C.dashCooldownDuration) * spec.dashCooldownMult;
   const isDashing = racer.dashCooldown > Math.max(0.15, dashBaseCd - 0.2);
-  const activeDrag = isDashing
+  const windZone = sampleWindZone(track, nextT);
+  const windAccel = windZone
+    ? windZone.force * (isDashing ? 0.42 : racer.hoverY > 1.2 ? 0.72 : 1.0)
+    : 0;
+  // Gentle flow-channel pull toward nectar stream center when not actively steering out
+  const nectarGuide =
+    activeNectar && Math.abs(input.steer) < 0.15 && !isDashing
+      ? clamp((activeNectar.lateral - racer.lateral) * 3.8, -14, 14)
+      : 0;
+
+  racer.lateralVel += (steerForce + centrifugalPush + windAccel + nectarGuide) * dt;
+  const baseDrag = isDashing
     ? C.lateralDrag * 0.42
     : Math.abs(input.steer) < 0.05
     ? C.lateralDrag * 1.35
     : C.lateralDrag;
+  // Blue-Ice sheets soften lateral drag for crisp, expressive drift carving without spinning out!
+  const activeDrag = activeIcePatch ? baseDrag * 0.56 : baseDrag;
   racer.lateralVel *= Math.exp(-activeDrag * dt);
-  const maxLatSpeed = isDashing ? C.maxLateralSpeed * 1.45 : C.maxLateralSpeed;
+  const maxLatSpeed = isDashing
+    ? C.maxLateralSpeed * 1.45
+    : activeIcePatch
+    ? C.maxLateralSpeed * 1.15
+    : C.maxLateralSpeed;
   racer.lateralVel = clamp(racer.lateralVel, -maxLatSpeed, maxLatSpeed);
   racer.lateral += racer.lateralVel * dt;
 
@@ -686,6 +880,63 @@ export function stepRacerPhysics(
   racer.worldY = world.pos.y;
   racer.worldZ = world.pos.z;
   racer.worldYaw = Math.atan2(world.frame.tangent.x, world.frame.tangent.z);
+
+  // Trigger Blue-Ice Glide burst event on entry!
+  if (activeIcePatch && !wasOnIce && racer.iceCalloutCooldown <= 0) {
+    racer.iceCalloutCooldown = 2.4;
+    racer.speed = Math.min(topSpeed + 8, racer.speed + (racer.isPlayer ? 6.5 : 3.0));
+    racer.boostEnergy = Math.min(100, racer.boostEnergy + 10);
+    if (racer.isPlayer) {
+      racer.styleScore += 80;
+    }
+    events.push({
+      type: 'ice-glide',
+      racerId: racer.id,
+      isPlayer: racer.isPlayer,
+      worldX: racer.worldX,
+      worldY: racer.worldY,
+      worldZ: racer.worldZ,
+      intensity: 0.78,
+    });
+  }
+
+  // Trigger Luminous Biolume Nectar Surge on entry!
+  if (activeNectar && !wasInNectar && racer.nectarCalloutCooldown <= 0) {
+    racer.nectarCalloutCooldown = 2.4;
+    racer.speed = Math.min(topSpeed + 9, racer.speed + (racer.isPlayer ? 7.0 : 3.2));
+    racer.boostEnergy = Math.min(100, racer.boostEnergy + 14);
+    if (racer.isPlayer) {
+      racer.styleScore += 90;
+    }
+    events.push({
+      type: 'nectar-surge',
+      racerId: racer.id,
+      isPlayer: racer.isPlayer,
+      worldX: racer.worldX,
+      worldY: racer.worldY,
+      worldZ: racer.worldZ,
+      intensity: 0.84,
+    });
+  }
+
+  // Trigger Zero-G Low-Gravity Cosmic Sky Strip entry burst!
+  if (activeLowGrav && !wasInLowGravity && racer.lowGravityCalloutCooldown <= 0) {
+    racer.lowGravityCalloutCooldown = 2.6;
+    racer.speed = Math.min(topSpeed + 10, racer.speed + (racer.isPlayer ? 6.5 : 3.2));
+    racer.boostEnergy = Math.min(100, racer.boostEnergy + 12);
+    if (racer.isPlayer) {
+      racer.styleScore += 100;
+    }
+    events.push({
+      type: 'zero-g-zone',
+      racerId: racer.id,
+      isPlayer: racer.isPlayer,
+      worldX: racer.worldX,
+      worldY: racer.worldY,
+      worldZ: racer.worldZ,
+      intensity: 0.88,
+    });
+  }
 
   // 3D Holographic Jump Launch Ramps — send UFOs soaring into the sky!
   if (racer.hoverY < 2.2 && racer.rampCooldown <= 0) {
@@ -881,22 +1132,170 @@ export function stepRacerPhysics(
     }
   }
 
-  // Interactive Track Obstacles: Sandstone Split-Pillars, Patrolling Hover Drones & Solar Pinball Bumpers!
+  // Interactive Track Obstacles: Split-Pillars, Drones, Bumpers, Crystals, Pollen, Spore-Pads, Star-Cores & Gravity Pulse Wells!
   const obstacles = track.def.obstacles;
   if (obstacles && obstacles.length > 0) {
     const ufoHeight = C.baseHoverHeight + racer.hoverY;
     for (let oi = 0; oi < obstacles.length; oi++) {
       const ob = obstacles[oi];
-      // Clean vertical clearance lets UFOs hop or sky-jump over hover drones & bumpers!
+      // Shatterable Frost Crystals, Floating Pollen Blooms & Cosmic Star-Cores are consumed once per lap by the player!
+      const consumeKey = `${ob.kind}:${racer.lap}:${ob.id}`;
+      if (
+        (ob.kind === 'frost-crystal' || ob.kind === 'pollen-orb' || ob.kind === 'star-core') &&
+        racer.isPlayer &&
+        collectedRingIds.has(consumeKey)
+      ) {
+        continue;
+      }
+
+      // Clean vertical clearance lets UFOs hop or sky-jump over drones, bumpers, crystals, pollen, pads, star-cores & wells!
       if (ufoHeight > ob.height + 0.65) continue;
 
       const obLat = getObstacleLateral(ob, raceTime);
       const dtMeters = shortestProgressDelta(ob.t, racer.t) * track.totalLength;
       const dLat = racer.lateral - obLat;
-      const hitDist = ob.radius + C.ufoRadius * 0.92;
+      const hitDist =
+        ob.radius +
+        C.ufoRadius *
+          (ob.kind === 'frost-crystal' ||
+          ob.kind === 'pollen-orb' ||
+          ob.kind === 'spore-pad' ||
+          ob.kind === 'star-core' ||
+          ob.kind === 'gravity-well'
+            ? 1.15
+            : 0.92);
       const distSq = dtMeters * dtMeters + dLat * dLat;
 
       if (distSq < hitDist * hitDist && distSq > 1e-5) {
+        if (ob.kind === 'frost-crystal') {
+          // Smash cleanly right through gleaming Cryo-Crystals with ZERO slowdown!
+          if (racer.isPlayer) {
+            collectedRingIds.add(consumeKey);
+            racer.styleScore += 140;
+          }
+          racer.boostEnergy = Math.min(100, racer.boostEnergy + 22);
+          racer.speed = Math.min(topSpeed + 12, racer.speed + (racer.isPlayer ? 8.5 : 4.0));
+          racer.squashX = 1.15;
+          racer.squashY = 0.88;
+          events.push({
+            type: 'crystal-shatter',
+            racerId: racer.id,
+            isPlayer: racer.isPlayer,
+            worldX: racer.worldX,
+            worldY: racer.worldY,
+            worldZ: racer.worldZ,
+            intensity: 0.92,
+            obstacleId: ob.id,
+          });
+          continue;
+        }
+
+        if (ob.kind === 'pollen-orb') {
+          // Burst cleanly through Floating Biolume Pollen Blooms for +130 pts, +25% boost & surge!
+          if (racer.isPlayer) {
+            collectedRingIds.add(consumeKey);
+            racer.styleScore += 130;
+          }
+          racer.boostEnergy = Math.min(100, racer.boostEnergy + 25);
+          racer.speed = Math.min(topSpeed + 13, racer.speed + (racer.isPlayer ? 9.0 : 4.2));
+          racer.squashX = 1.14;
+          racer.squashY = 0.88;
+          events.push({
+            type: 'pollen-burst',
+            racerId: racer.id,
+            isPlayer: racer.isPlayer,
+            worldX: racer.worldX,
+            worldY: racer.worldY,
+            worldZ: racer.worldZ,
+            intensity: 0.94,
+            obstacleId: ob.id,
+          });
+          continue;
+        }
+
+        if (ob.kind === 'star-core') {
+          // Crack Cosmic Star-Cores for a supernova surge: +150 pts, +28% boost, +10 m/s, zero slowdown!
+          if (racer.isPlayer) {
+            collectedRingIds.add(consumeKey);
+            racer.styleScore += 150;
+          }
+          racer.boostEnergy = Math.min(100, racer.boostEnergy + 28);
+          racer.speed = Math.min(topSpeed + 15, racer.speed + (racer.isPlayer ? 10.0 : 4.8));
+          racer.squashX = 1.18;
+          racer.squashY = 0.86;
+          events.push({
+            type: 'star-core-nova',
+            racerId: racer.id,
+            isPlayer: racer.isPlayer,
+            worldX: racer.worldX,
+            worldY: racer.worldY,
+            worldZ: racer.worldZ,
+            intensity: 0.98,
+            obstacleId: ob.id,
+          });
+          continue;
+        }
+
+        if (ob.kind === 'gravity-well') {
+          // Spinning Cosmic Gravity Pulse Well: orbital slingshot whips UFO cleanly forward (+14 m/s, +26% boost, +175 PTS)!
+          if (racer.bumperCooldown <= 0) {
+            racer.bumperCooldown = 0.78;
+            const orbitSign = dLat >= 0 ? 1 : -1;
+            racer.lateralVel = clamp(
+              racer.lateralVel + orbitSign * 7.5,
+              -C.maxLateralSpeed * 1.2,
+              C.maxLateralSpeed * 1.2,
+            );
+            const whipBonus = (ob.bounceForce ?? 15) * (racer.isPlayer ? 1.0 : 0.55) * speedClass;
+            racer.speed = Math.max(racer.speed + whipBonus * 0.92, baseCap + whipBonus * 0.72);
+            racer.boostPadTimer = Math.max(racer.boostPadTimer, 0.95);
+            racer.boostEnergy = Math.min(100, racer.boostEnergy + 26);
+            racer.squashX = 0.86;
+            racer.squashY = 1.22;
+            if (racer.isPlayer) {
+              racer.styleScore += 175;
+            }
+            events.push({
+              type: 'gravity-slingshot',
+              racerId: racer.id,
+              isPlayer: racer.isPlayer,
+              worldX: racer.worldX,
+              worldY: racer.worldY,
+              worldZ: racer.worldZ,
+              intensity: 1.0,
+              obstacleId: ob.id,
+            });
+          }
+          continue;
+        }
+
+        if (ob.kind === 'spore-pad') {
+          // Bouncy Giant Toadstool Spring-Pad: catapults UFO into the canopy with +160 pts & +24% boost!
+          if (racer.bumperCooldown <= 0) {
+            const launchVy = (ob.bounceForce ?? 26.5) * (isFree ? 1.12 : 1.0) * spec.hopMult;
+            racer.bumperCooldown = 0.85;
+            racer.vy = Math.max(racer.vy, launchVy);
+            racer.boostEnergy = Math.min(100, racer.boostEnergy + 24);
+            racer.speed = Math.min(topSpeed + 14, racer.speed + (racer.isPlayer ? 10.0 : 4.5));
+            racer.squashX = 0.82;
+            racer.squashY = 1.3;
+            if (racer.isPlayer) {
+              racer.styleScore += 160;
+            }
+            events.push({
+              type: 'spore-bounce',
+              racerId: racer.id,
+              isPlayer: racer.isPlayer,
+              worldX: racer.worldX,
+              worldY: racer.worldY,
+              worldZ: racer.worldZ,
+              intensity: 1.0,
+              obstacleId: ob.id,
+            });
+          }
+          continue;
+        }
+
         const dist = Math.sqrt(distSq);
         const nxLat = Math.abs(dLat) > 0.15 ? dLat / dist : racer.lateral >= obLat ? 1 : -1;
         const nxT = dtMeters / dist;
@@ -935,15 +1334,20 @@ export function stepRacerPhysics(
             });
           }
         } else {
-          // Solid sandstone split-pillar or patrolling hover drone -> smooth lateral deflection!
+          // Solid sandstone/glacial/fungal/meteor split-pillar or patrolling hover drone -> smooth lateral deflection!
           if (racer.bumpCooldown <= 0) {
             racer.bumpCooldown = 0.36;
             racer.hitFlashTimer = 0.08;
             racer.lateralVel = clamp(pushSign * 14.5, -C.maxLateralSpeed, C.maxLateralSpeed);
-            // Gentle speed trim so Easy Level 1 never feels punishing or stuck
-            racer.speed *= ob.kind === 'rock-pillar' ? 0.84 : 0.88;
+            racer.speed *=
+              ob.kind === 'rock-pillar' ||
+              ob.kind === 'ice-spire' ||
+              ob.kind === 'spore-stalk' ||
+              ob.kind === 'meteor-spire'
+                ? 0.84
+                : 0.88;
             if (nxT < -0.25) {
-              // Ensure forward progress doesn't snag on front face of a pillar
+              // Ensure forward progress doesn't snag on front face of a spire/stalk
               racer.lateral = clamp(racer.lateral + pushSign * 1.2, -deckHalfTrack, deckHalfTrack);
             }
             racer.squashX = 0.86;

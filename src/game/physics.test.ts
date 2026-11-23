@@ -606,5 +606,463 @@ test('Level 1 Solar Pinball Bumpers, Sandstone Pillars, and Slingshot Turbo Gate
   assert.ok(player.speed > 86, `slingshot gate should surge speed (got ${player.speed.toFixed(1)})`);
 });
 
+test('Level 2 Standard AI races livelier than Easy Lv1, boosts fairly in competitive window, and counter-steers in crosswinds', () => {
+  const lv1 = getLevelDefinition(1);
+  const lv2 = getLevelDefinition(2);
+  const track2 = buildBakedTrack(CIRCUITS['glacier-spire'], 600);
+  const racers2 = createInitialRacers(track2, lv2, 'race');
+  const rival2 = racers2[1];
+
+  // Standard AI can fire tactical boost when closely racing ahead (gap < 0.035), unlike Easy Lv1
+  rival2.totalProgress = 0.22;
+  rival2.boostEnergy = 100;
+  rival2.aiBoostBurstTimer = 0.45;
+  const standardBoostIn = computeAiInput(rival2, racers2, track2, 5.0, 0.05, 0.20, lv2);
+  assert.equal(standardBoostIn.boostHeld, true, 'Standard AI should fire tactical boost within fair lead window');
+
+  // Standard AI holds back boost when far ahead (gap > 0.05) to keep races fun & fair
+  rival2.totalProgress = 0.28;
+  rival2.aiBoostBurstTimer = 0.45;
+  const farAheadIn = computeAiInput(rival2, racers2, track2, 5.0, 0.05, 0.20, lv2);
+  assert.equal(farAheadIn.boostHeld, false, 'Standard AI should not spam boost when well ahead of player');
+
+  // Inside positive crosswind (+force right), Standard AI actively counter-steers left!
+  const wind1 = track2.def.windZones?.[0];
+  assert.ok(wind1 && wind1.force > 0, 'glacier-spire should have a positive crosswind zone');
+  rival2.t = (wind1.tStart + wind1.tEnd) * 0.5;
+  rival2.lateral = 0;
+  rival2.aiTargetLane = 0;
+  rival2.aiDecisionTimer = 0.5;
+  const windIn = computeAiInput(rival2, racers2, track2, 5.0, 0.05, rival2.totalProgress, lv2);
+  assert.ok(windIn.steer < -0.05, `Standard AI should counter-steer into crosswind (steer=${windIn.steer.toFixed(3)})`);
+
+  // Standard Lv2 AI maintains faster steady throttle than Easy Lv1 AI on the same straight
+  const track1 = buildBakedTrack(CIRCUITS['solar-canyon'], 600);
+  const racers1 = createInitialRacers(track1, lv1, 'race');
+  racers1[1].t = 0.01;
+  racers2[1].t = 0.01;
+  const easyTh = computeAiInput(racers1[1], racers1, track1, 6.0, 0.05, racers1[1].totalProgress, lv1).throttle;
+  const stdTh = computeAiInput(racers2[1], racers2, track2, 6.0, 0.05, racers2[1].totalProgress, lv2).throttle;
+  assert.ok(stdTh > easyTh, `Standard Lv2 AI throttle (${stdTh.toFixed(3)}) should exceed Easy Lv1 (${easyTh.toFixed(3)})`);
+});
+
+test('Level 2 Shatterable Frost Crystals, Blue-Ice Slip-Glide Zones, and Blizzard Crosswind physics work smoothly', () => {
+  const lv2 = getLevelDefinition(2);
+  const track = buildBakedTrack(CIRCUITS['glacier-spire'], 600);
+  const [player] = createInitialRacers(track, lv2, 'race');
+  const collected = new Set<string>();
+
+  // 1. Shatterable Frost Crystal -> zero slowdown, +140 pts, +22% boost, +8.5 m/s burst, no double-shatter!
+  const crystal = track.def.obstacles?.find((o) => o.kind === 'frost-crystal');
+  assert.ok(crystal, 'glacier-spire should include shatterable frost-crystal prisms');
+  const evCrystal: PhysicsEvent[] = [];
+  player.t = crystal.t - 0.0002;
+  player.lateral = crystal.lateral;
+  player.speed = 68;
+  player.boostEnergy = 40;
+  player.styleScore = 0;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    2.0,
+    0.05,
+    collected,
+    evCrystal,
+    lv2,
+  );
+  assert.ok(evCrystal.some((e) => e.type === 'crystal-shatter'), 'smashing frost-crystal should emit crystal-shatter');
+  assert.ok(player.speed > 74, `smashing crystal should burst speed without slowdown (got ${player.speed.toFixed(1)})`);
+  assert.ok(player.boostEnergy >= 60, 'crystal shatter should award +22% boost');
+  assert.ok(player.styleScore >= 140, 'crystal shatter should award +140 style points');
+
+  // Re-passing same shattered crystal on same lap should not re-trigger
+  const evRepeat: PhysicsEvent[] = [];
+  player.t = crystal.t - 0.0002;
+  player.lateral = crystal.lateral;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    2.2,
+    0.05,
+    collected,
+    evRepeat,
+    lv2,
+  );
+  assert.equal(evRepeat.some((e) => e.type === 'crystal-shatter'), false, 'shattered crystal should stay consumed for the current lap');
+
+  // 2. Blue-Ice Slip-Glide Zone -> sets isOnIce, emits ice-glide, boosts top speed & cuts lateral drag!
+  const ice = track.def.icePatches?.[0];
+  assert.ok(ice, 'glacier-spire should include Blue-Ice Slip-Glide patches');
+  const evIce: PhysicsEvent[] = [];
+  player.t = (ice.tStart + ice.tEnd) * 0.5;
+  player.lateral = ice.lateral;
+  player.hoverY = 0;
+  player.vy = 0;
+  player.isOnIce = false;
+  player.iceCalloutCooldown = 0;
+  player.speed = 70;
+  player.styleScore = 0;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    4.0,
+    0.05,
+    collected,
+    evIce,
+    lv2,
+  );
+  assert.equal(player.isOnIce, true, 'grounded craft on blue-ice patch should set isOnIce=true');
+  assert.ok(evIce.some((e) => e.type === 'ice-glide'), 'entering blue-ice patch should emit ice-glide');
+  assert.ok(player.styleScore >= 80, 'blue-ice entry should award +80 style points');
+
+  // 3. Blizzard Crosswind Zone -> imparts smooth lateral wind drift in direction of wind.force!
+  const wind = track.def.windZones?.[0];
+  assert.ok(wind, 'glacier-spire should include Blizzard Crosswind zones');
+  player.t = (wind.tStart + wind.tEnd) * 0.5;
+  player.lateral = 0;
+  player.lateralVel = 0;
+  player.speed = 0; // isolate pure wind lateral acceleration
+  const evWind: PhysicsEvent[] = [];
+  stepRacerPhysics(
+    player,
+    { throttle: 0, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    6.0,
+    0.05,
+    collected,
+    evWind,
+    lv2,
+  );
+  assert.ok(
+    Math.sign(player.lateralVel) === Math.sign(wind.force) && Math.abs(player.lateralVel) > 0.3,
+    `crosswind should push craft laterally in wind direction (vel=${player.lateralVel.toFixed(3)}, force=${wind.force})`,
+  );
+});
+
+test('Level 3 Upper-Standard AI outpaces Level 2 Standard AI while obeying fair competitive boost windows', () => {
+  const lv2 = getLevelDefinition(2);
+  const lv3 = getLevelDefinition(3);
+  const track2 = buildBakedTrack(CIRCUITS['glacier-spire'], 600);
+  const track3 = buildBakedTrack(CIRCUITS['biolume-jungle'], 600);
+  const racers2 = createInitialRacers(track2, lv2, 'race');
+  const racers3 = createInitialRacers(track3, lv3, 'race');
+  const rival3 = racers3[1];
+
+  // Upper-Standard AI boosts inside fair competitive lead window (gap < 0.035)
+  rival3.totalProgress = 0.22;
+  rival3.boostEnergy = 100;
+  rival3.aiBoostBurstTimer = 0.45;
+  const closeIn = computeAiInput(rival3, racers3, track3, 5.0, 0.05, 0.20, lv3);
+  assert.equal(closeIn.boostHeld, true, 'Level 3 Standard AI should fire tactical boost within fair lead window');
+
+  // Upper-Standard AI holds back boost when well ahead of player
+  rival3.totalProgress = 0.28;
+  rival3.aiBoostBurstTimer = 0.45;
+  const farIn = computeAiInput(rival3, racers3, track3, 5.0, 0.05, 0.20, lv3);
+  assert.equal(farIn.boostHeld, false, 'Level 3 Standard AI should not spam boost when far ahead');
+
+  // Level 3 steady throttle exceeds Level 2 on clean launch straight
+  racers2[1].t = 0.01;
+  racers3[1].t = 0.01;
+  const lv2Th = computeAiInput(racers2[1], racers2, track2, 6.0, 0.05, racers2[1].totalProgress, lv2).throttle;
+  const lv3Th = computeAiInput(racers3[1], racers3, track3, 6.0, 0.05, racers3[1].totalProgress, lv3).throttle;
+  assert.ok(lv3Th > lv2Th, `Level 3 Standard AI throttle (${lv3Th.toFixed(3)}) should exceed Level 2 (${lv2Th.toFixed(3)})`);
+});
+
+test('Level 3 Bouncy Spore-Pads, Biolume Pollen-Orbs, and Luminous Nectar Flow Streams fire unique physics rewards', () => {
+  const lv3 = getLevelDefinition(3);
+  const track = buildBakedTrack(CIRCUITS['biolume-jungle'], 600);
+  const [player] = createInitialRacers(track, lv3, 'race');
+  const collected = new Set<string>();
+
+  // 1. Bouncy Giant Toadstool Spore-Pad -> strong vertical spring launch, +160 pts, +24% boost
+  const sporePad = track.def.obstacles?.find((o) => o.kind === 'spore-pad');
+  assert.ok(sporePad, 'biolume-jungle should include bouncy spore-pad toadstools');
+  const evPad: PhysicsEvent[] = [];
+  player.t = sporePad.t - 0.0002;
+  player.lateral = sporePad.lateral;
+  player.hoverY = 0;
+  player.vy = 0;
+  player.speed = 66;
+  player.boostEnergy = 35;
+  player.styleScore = 0;
+  player.bumpCooldown = 0;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    2.0,
+    0.05,
+    collected,
+    evPad,
+    lv3,
+  );
+  assert.ok(evPad.some((e) => e.type === 'spore-bounce'), 'hitting spore-pad should emit spore-bounce');
+  assert.ok(player.vy >= 24, `spore-pad should spring-launch UFO high (vy=${player.vy.toFixed(1)})`);
+  assert.ok(player.styleScore >= 160, 'spore-pad bounce should award +160 style points');
+  assert.ok(player.boostEnergy >= 58, 'spore-pad bounce should recharge boost by +24%');
+
+  // 2. Floating Biolume Pollen-Orb -> zero slowdown, speed burst, +130 pts, +25% boost, per-lap consumed
+  const pollen = track.def.obstacles?.find((o) => o.kind === 'pollen-orb');
+  assert.ok(pollen, 'biolume-jungle should include floating pollen-orb blooms');
+  const evPollen: PhysicsEvent[] = [];
+  player.t = pollen.t - 0.0002;
+  player.lateral = pollen.lateral;
+  player.hoverY = 0.5;
+  player.vy = 0;
+  player.speed = 68;
+  player.boostEnergy = 35;
+  player.styleScore = 0;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    4.0,
+    0.05,
+    collected,
+    evPollen,
+    lv3,
+  );
+  assert.ok(evPollen.some((e) => e.type === 'pollen-burst'), 'bursting pollen-orb should emit pollen-burst');
+  assert.ok(player.speed > 74, `pollen-orb should surge speed without slowdown (got ${player.speed.toFixed(1)})`);
+  assert.ok(player.boostEnergy >= 59, 'pollen-orb should recharge boost by +25%');
+  assert.ok(player.styleScore >= 130, 'pollen-orb should award +130 style points');
+
+  // Re-passing same pollen-orb on same lap should not re-trigger
+  const evPollenRepeat: PhysicsEvent[] = [];
+  player.t = pollen.t - 0.0002;
+  player.lateral = pollen.lateral;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    4.2,
+    0.05,
+    collected,
+    evPollenRepeat,
+    lv3,
+  );
+  assert.equal(evPollenRepeat.some((e) => e.type === 'pollen-burst'), false, 'consumed pollen-orb should stay spent until next lap');
+
+  // 3. Luminous Nectar Flow Stream -> sets isInNectar, emits nectar-surge, continuously regenerates boost & surges speed
+  const nectar = track.def.nectarStreams?.[0];
+  assert.ok(nectar, 'biolume-jungle should include Luminous Nectar Flow Streams');
+  const evNectar: PhysicsEvent[] = [];
+  player.t = (nectar.tStart + nectar.tEnd) * 0.5;
+  player.lateral = nectar.lateral;
+  player.hoverY = 0;
+  player.vy = 0;
+  player.isInNectar = false;
+  player.nectarCalloutCooldown = 0;
+  player.speed = 72;
+  player.boostEnergy = 40;
+  player.styleScore = 0;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    6.0,
+    0.2,
+    collected,
+    evNectar,
+    lv3,
+  );
+  assert.equal(player.isInNectar, true, 'riding inside luminous nectar stream should set isInNectar=true');
+  assert.ok(evNectar.some((e) => e.type === 'nectar-surge'), 'entering nectar stream should emit nectar-surge');
+  assert.ok(player.boostEnergy > 44, `nectar stream should continuously recharge boost (got ${player.boostEnergy.toFixed(1)})`);
+  assert.ok(player.styleScore >= 90, 'entering nectar stream should award +90 style points');
+});
+
+test('Level 4 Challenger AI outpaces Level 3 Standard AI, boosts fairly within challenger lead window, and targets cosmic orbs', () => {
+  const lv3 = getLevelDefinition(3);
+  const lv4 = getLevelDefinition(4);
+  const track3 = buildBakedTrack(CIRCUITS[lv3.circuitId], 600);
+  const track4 = buildBakedTrack(CIRCUITS[lv4.circuitId], 600);
+
+  const racers3 = createInitialRacers(track3, lv3, 'race');
+  const racers4 = createInitialRacers(track4, lv4, 'race');
+  const collected3 = new Set<string>();
+  const collected4 = new Set<string>();
+  const ev3: PhysicsEvent[] = [];
+  const ev4: PhysicsEvent[] = [];
+
+  for (let step = 0; step < 120; step++) {
+    const tSec = step * 0.05;
+    for (let i = 1; i < racers3.length; i++) {
+      const in3 = computeAiInput(racers3[i], racers3, track3, tSec, 0.05, racers3[0].totalProgress, lv3);
+      stepRacerPhysics(racers3[i], in3, track3, tSec, 0.05, collected3, ev3, lv3);
+      const in4 = computeAiInput(racers4[i], racers4, track4, tSec, 0.05, racers4[0].totalProgress, lv4);
+      stepRacerPhysics(racers4[i], in4, track4, tSec, 0.05, collected4, ev4, lv4);
+    }
+  }
+
+  const avgSpeed3 = racers3.slice(1).reduce((s, r) => s + r.speed, 0) / (racers3.length - 1);
+  const avgSpeed4 = racers4.slice(1).reduce((s, r) => s + r.speed, 0) / (racers4.length - 1);
+  assert.ok(
+    avgSpeed4 > avgSpeed3,
+    `Challenger Lv4 AI (${avgSpeed4.toFixed(1)} m/s) should clearly outpace Standard Lv3 AI (${avgSpeed3.toFixed(1)} m/s)`,
+  );
+
+  // Challenger rival slightly ahead (+0.04) may boost, but holds back if far ahead (+0.08)
+  const rival = racers4[1];
+  rival.boostEnergy = 100;
+  rival.aiBoostBurstTimer = 0.5;
+  rival.totalProgress = 0.24;
+  const closeLead = computeAiInput(rival, racers4, track4, 6.0, 0.05, 0.20, lv4);
+  assert.equal(closeLead.boostHeld, true, 'Challenger AI should boost in tight lead battles (+0.04)');
+
+  rival.totalProgress = 0.28;
+  rival.aiBoostBurstTimer = 0.5;
+  const farLead = computeAiInput(rival, racers4, track4, 6.0, 0.05, 0.20, lv4);
+  assert.equal(farLead.boostHeld, false, 'Challenger AI should hold boost when far ahead (+0.08) for fair racing');
+
+  // Challenger AI should route toward an upcoming Star-Core within range
+  const starCore = track4.def.obstacles?.find((o) => o.kind === 'star-core');
+  assert.ok(starCore, 'nebula-ridge should include cosmic star-core orbs');
+  rival.t = starCore.t - 40 / track4.totalLength;
+  rival.lateral = starCore.lateral - 5.0;
+  rival.aiDecisionTimer = 0.5;
+  computeAiInput(rival, racers4, track4, 8.0, 0.05, 0.1, lv4);
+  assert.ok(
+    Math.abs(rival.aiTargetLane - starCore.lateral) < 1.0,
+    `Challenger AI should route into upcoming star-core (target=${rival.aiTargetLane.toFixed(1)}, core=${starCore.lateral})`,
+  );
+});
+
+test('Level 4 Zero-G Sky Strips, Gravity Pulse Wells, and Cosmic Star-Cores trigger distinct cosmic physics', () => {
+  const lv4 = getLevelDefinition(4);
+  const track = buildBakedTrack(CIRCUITS['nebula-ridge'], 600);
+  const [player] = createInitialRacers(track, lv4, 'race');
+  const collected = new Set<string>();
+
+  // 1. Zero-G Low-Gravity Sky Strip -> halves airborne gravity for huge moon-jump float + +100 pts + zero-g-zone event
+  const zeroG = track.def.lowGravityZones?.[0];
+  assert.ok(zeroG, 'nebula-ridge should include Zero-G Low-Gravity Sky Strips');
+  const [normalRacer] = createInitialRacers(track, lv4, 'race');
+  const midT = (zeroG.tStart + zeroG.tEnd) * 0.5;
+
+  player.t = midT;
+  player.lateral = zeroG.lateral;
+  player.hoverY = 0;
+  player.vy = 18;
+  player.speed = 65;
+  player.isInLowGravity = false;
+  player.lowGravityCalloutCooldown = 0;
+  player.styleScore = 0;
+
+  normalRacer.t = 0.02; // outside any low-G strip
+  normalRacer.lateral = 0;
+  normalRacer.hoverY = 0;
+  normalRacer.vy = 18;
+  normalRacer.speed = 65;
+
+  const evZeroG: PhysicsEvent[] = [];
+  const evNormal: PhysicsEvent[] = [];
+  for (let s = 0; s < 10; s++) {
+    stepRacerPhysics(
+      player,
+      { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+      track,
+      2.0 + s * 0.05,
+      0.05,
+      collected,
+      evZeroG,
+      lv4,
+    );
+    stepRacerPhysics(
+      normalRacer,
+      { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+      track,
+      2.0 + s * 0.05,
+      0.05,
+      new Set(),
+      evNormal,
+      lv4,
+    );
+  }
+  assert.equal(player.isInLowGravity, true, 'soaring over Zero-G sky strip should set isInLowGravity=true');
+  assert.ok(evZeroG.some((e) => e.type === 'zero-g-zone'), 'entering Zero-G strip should emit zero-g-zone');
+  assert.ok(player.styleScore >= 100, 'entering Zero-G strip should award +100 style points');
+  assert.ok(
+    player.hoverY > normalRacer.hoverY + 1.5,
+    `Zero-G moon gravity should keep UFO soaring much higher (${player.hoverY.toFixed(2)}m vs normal ${normalRacer.hoverY.toFixed(2)}m)`,
+  );
+
+  // 2. Gravity Pulse Well -> orbital slingshot whips UFO forward (+175 pts, +26% boost, zero slowdown!)
+  const well = track.def.obstacles?.find((o) => o.kind === 'gravity-well');
+  assert.ok(well, 'nebula-ridge should include Gravity Pulse Wells');
+  const evWell: PhysicsEvent[] = [];
+  player.t = well.t - 0.0002;
+  player.lateral = well.lateral + 1.2;
+  player.hoverY = 0;
+  player.vy = 0;
+  player.speed = 70;
+  player.boostEnergy = 35;
+  player.styleScore = 0;
+  player.bumperCooldown = 0;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    5.0,
+    0.05,
+    collected,
+    evWell,
+    lv4,
+  );
+  assert.ok(evWell.some((e) => e.type === 'gravity-slingshot'), 'entering gravity-well should emit gravity-slingshot');
+  assert.ok(player.speed > 80, `gravity-well slingshot should whip speed forward (got ${player.speed.toFixed(1)})`);
+  assert.ok(player.boostEnergy >= 60, 'gravity-well should recharge boost by +26%');
+  assert.ok(player.styleScore >= 175, 'gravity-well should award +175 style points');
+
+  // 3. Cosmic Star-Core -> supernova burst (+150 pts, +28% boost, zero slowdown, consumed once per lap!)
+  const core = track.def.obstacles?.find((o) => o.kind === 'star-core');
+  assert.ok(core, 'nebula-ridge should include Cosmic Star-Cores');
+  const evCore: PhysicsEvent[] = [];
+  player.t = core.t - 0.0002;
+  player.lateral = core.lateral;
+  player.hoverY = 0.5;
+  player.vy = 0;
+  player.speed = 72;
+  player.boostEnergy = 35;
+  player.styleScore = 0;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    7.0,
+    0.05,
+    collected,
+    evCore,
+    lv4,
+  );
+  assert.ok(evCore.some((e) => e.type === 'star-core-nova'), 'cracking star-core should emit star-core-nova');
+  assert.ok(player.speed > 80, `star-core should surge speed with zero slowdown (got ${player.speed.toFixed(1)})`);
+  assert.ok(player.boostEnergy >= 62, 'star-core should recharge boost by +28%');
+  assert.ok(player.styleScore >= 150, 'star-core should award +150 style points');
+
+  // Same lap repeat should stay consumed
+  const evCoreRepeat: PhysicsEvent[] = [];
+  player.t = core.t - 0.0002;
+  player.lateral = core.lateral;
+  stepRacerPhysics(
+    player,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track,
+    7.2,
+    0.05,
+    collected,
+    evCoreRepeat,
+    lv4,
+  );
+  assert.equal(evCoreRepeat.some((e) => e.type === 'star-core-nova'), false, 'consumed star-core should stay spent until next lap');
+});
+
+
+
+
 
 

@@ -55,7 +55,10 @@ import {
   buildCanyonEnvironment,
   buildCheckpointGates,
   buildEnergyRings,
+  buildIcePatches,
   buildJumpRamps,
+  buildLowGravityZones,
+  buildNectarStreams,
   buildShockHazards,
   buildSkyDome,
   buildSpeedGates,
@@ -65,6 +68,7 @@ import {
   buildUfoModel,
   buildUpdrafts,
   buildWarpTunnels,
+  buildWindZones,
   createContactShadowTexture,
   createUnderglowTexture,
   type CheckpointVisual,
@@ -76,6 +80,7 @@ import {
   type UfoVisualRig,
   type UpdraftVisual,
   type WarpTunnelVisual,
+  type WindZoneVisual,
 } from './models';
 import { SaucerAudio } from './audio';
 
@@ -169,6 +174,7 @@ export class SaucerGameEngine {
   private hazardVisuals: HazardVisual[] = [];
   private obstacleVisuals: ObstacleVisual[] = [];
   private speedGateVisuals: SpeedGateVisual[] = [];
+  private windZoneVisuals: WindZoneVisual[] = [];
   private updraftVisuals: UpdraftVisual[] = [];
   private warpTunnelVisuals: WarpTunnelVisual[] = [];
   private rotatingGates: THREE.Group[] = [];
@@ -381,13 +387,13 @@ export class SaucerGameEngine {
       this.rimLight.color.setHex(0x2df9f2);
       this.rimLight.intensity = 1.15;
     } else if (biome === 'nebula') {
-      this.hemiLight.color.setHex(0x9b8cf5);
-      this.hemiLight.groundColor.setHex(0x5c3a6e);
-      this.hemiLight.intensity = 0.88;
-      this.sunLight.color.setHex(0xffd2a6);
-      this.sunLight.intensity = 2.08;
-      this.rimLight.color.setHex(0x2df9f2);
-      this.rimLight.intensity = 0.9;
+      this.hemiLight.color.setHex(0xb3a1ff);
+      this.hemiLight.groundColor.setHex(0x4e2d66);
+      this.hemiLight.intensity = 0.94;
+      this.sunLight.color.setHex(0xffddb8);
+      this.sunLight.intensity = 2.18;
+      this.rimLight.color.setHex(0x38bdf8);
+      this.rimLight.intensity = 1.05;
     } else {
       this.hemiLight.color.setHex(0x88b4f7);
       this.hemiLight.groundColor.setHex(0xb85e3a);
@@ -641,6 +647,7 @@ export class SaucerGameEngine {
     this.hazardVisuals = [];
     this.obstacleVisuals = [];
     this.speedGateVisuals = [];
+    this.windZoneVisuals = [];
     this.updraftVisuals = [];
     this.warpTunnelVisuals = [];
     this.rotatingGates = [];
@@ -662,13 +669,19 @@ export class SaucerGameEngine {
     const fogDensity =
       def.biome === 'canyon'
         ? 0.00092
+        : def.biome === 'glacier'
+        ? 0.00086
+        : def.biome === 'biolume'
+        ? 0.0009
+        : def.biome === 'nebula'
+        ? 0.00082
         : def.biome === 'aether' || def.biome === 'cybercity' || def.biome === 'quantum'
         ? 0.00108
         : 0.00135;
     this.scene.fog = new THREE.FogExp2(def.fogColor, fogDensity);
     this.applyBiomeLighting(def.biome);
 
-    // Sky dome + Biome environment + Track + Gantry + Boost pads + Jump Ramps + Updrafts + Warp Tunnels + Rings + Checkpoints + Hazards + Obstacles + Slingshot Gates
+    // Sky dome + Biome environment + Track + Gantry + Boost pads + Blue-Ice/Nectar/Zero-G Strips + Jump Ramps + Updrafts + Warp Tunnels + Rings + Checkpoints + Hazards + Obstacles + Slingshot Gates + Wind Zones
     this.worldGroup.add(buildSkyDome(def.skyTopColor, def.skyHorizonColor));
     const envBuilt = buildCanyonEnvironment(this.track, maxAniso, this.isSoftwareGl);
     this.worldGroup.add(envBuilt.group);
@@ -678,6 +691,9 @@ export class SaucerGameEngine {
     this.worldGroup.add(buildTrackMesh(this.track, maxAniso, this.isSoftwareGl));
     this.worldGroup.add(buildStartGantry(this.track, this.isSoftwareGl));
     this.worldGroup.add(buildBoostPads(this.track, maxAniso));
+    this.worldGroup.add(buildIcePatches(this.track, maxAniso));
+    this.worldGroup.add(buildNectarStreams(this.track, maxAniso));
+    this.worldGroup.add(buildLowGravityZones(this.track, maxAniso));
     this.worldGroup.add(buildJumpRamps(this.track, maxAniso));
 
     const updrafts = buildUpdrafts(this.track);
@@ -711,6 +727,10 @@ export class SaucerGameEngine {
     const speedGates = buildSpeedGates(this.track);
     this.worldGroup.add(speedGates.group);
     this.speedGateVisuals = speedGates.visuals;
+
+    const windZones = buildWindZones(this.track);
+    this.worldGroup.add(windZones.group);
+    this.windZoneVisuals = windZones.visuals;
 
     // Build level-specific exotic 6-UFO fleet (with distinct player craft & rivals per level!)
     const levelRoster = getLevelRoster(
@@ -768,6 +788,9 @@ export class SaucerGameEngine {
 
     for (const rv of this.ringVisuals) {
       rv.group.visible = true;
+    }
+    for (const ov of this.obstacleVisuals) {
+      ov.group.visible = true;
     }
     this.resetCheckpointVisuals();
     for (const p of this.particles) {
@@ -1132,6 +1155,81 @@ export class SaucerGameEngine {
           this.applyCameraRecoil(-dir * 3.6, 1.3, -dir * 0.14);
           this.pushCallout('PINBALL BOUNCE! +100', 'cyan', 1.0);
         }
+      } else if (ev.type === 'crystal-shatter') {
+        this.spawnImpactRing(ev.worldX, ev.worldY, ev.worldZ, 0, 1, 0, 0x7efcf7, 4.6, 0.42);
+        this.spawnParticles(ev.worldX, ev.worldY + 0.5, ev.worldZ, ev.isPlayer ? 24 : 8, 0x7efcf7, 19, 0.52, 1.25);
+        this.spawnParticles(ev.worldX, ev.worldY + 0.4, ev.worldZ, ev.isPlayer ? 12 : 4, 0xffffff, 15, 0.44, 0.95);
+        if (ev.isPlayer) {
+          this.audio.playRingPickup(true);
+          this.applyCameraRecoil(0, -1.1, 0);
+          this.pushCallout('CRYSTAL SHATTER! +140', 'cyan', 1.0);
+          if (ev.obstacleId) {
+            const ov = this.obstacleVisuals.find((o) => o.id === ev.obstacleId);
+            if (ov) ov.group.visible = false;
+          }
+        }
+      } else if (ev.type === 'ice-glide') {
+        this.spawnParticles(ev.worldX, ev.worldY - 0.6, ev.worldZ, ev.isPlayer ? 14 : 5, 0xbaf2ff, 12, 0.38, 1.0);
+        if (ev.isPlayer) {
+          this.audio.playBoost();
+          this.pushCallout('BLUE-ICE GLIDE! +80', 'cyan', 0.95);
+        }
+      } else if (ev.type === 'spore-bounce') {
+        this.spawnImpactRing(ev.worldX, ev.worldY - 0.3, ev.worldZ, 0, 1, 0, 0xf472b6, 4.9, 0.48);
+        this.spawnParticles(ev.worldX, ev.worldY, ev.worldZ, ev.isPlayer ? 24 : 8, 0x34d399, 19, 0.54, 1.3);
+        this.spawnParticles(ev.worldX, ev.worldY + 0.3, ev.worldZ, ev.isPlayer ? 12 : 4, 0xf472b6, 16, 0.48, 1.05);
+        if (ev.isPlayer) {
+          this.audio.playBoostPad();
+          this.applyCameraRecoil(0, -2.1, 0);
+          this.pushCallout('SPORE BOUNCE! +160', 'amber', 1.05);
+        }
+      } else if (ev.type === 'pollen-burst') {
+        this.spawnImpactRing(ev.worldX, ev.worldY, ev.worldZ, 0, 1, 0, 0xfde047, 4.4, 0.4);
+        this.spawnParticles(ev.worldX, ev.worldY + 0.4, ev.worldZ, ev.isPlayer ? 24 : 8, 0xfde047, 18, 0.52, 1.2);
+        this.spawnParticles(ev.worldX, ev.worldY + 0.4, ev.worldZ, ev.isPlayer ? 12 : 4, 0x34d399, 15, 0.46, 0.95);
+        if (ev.isPlayer) {
+          this.audio.playRingPickup(true);
+          this.applyCameraRecoil(0, -1.0, 0);
+          this.pushCallout('POLLEN BURST! +130', 'amber', 1.0);
+          if (ev.obstacleId) {
+            const ov = this.obstacleVisuals.find((o) => o.id === ev.obstacleId);
+            if (ov) ov.group.visible = false;
+          }
+        }
+      } else if (ev.type === 'nectar-surge') {
+        this.spawnParticles(ev.worldX, ev.worldY - 0.5, ev.worldZ, ev.isPlayer ? 16 : 6, 0x34d399, 13, 0.42, 1.05);
+        if (ev.isPlayer) {
+          this.audio.playBoost();
+          this.pushCallout('NECTAR SURGE! +90', 'cyan', 0.95);
+        }
+      } else if (ev.type === 'zero-g-zone') {
+        this.spawnParticles(ev.worldX, ev.worldY - 0.4, ev.worldZ, ev.isPlayer ? 18 : 6, 0xe879f9, 14, 0.48, 1.15);
+        if (ev.isPlayer) {
+          this.audio.playHop();
+          this.pushCallout('ZERO-G FLOAT! +100', 'cyan', 1.0);
+        }
+      } else if (ev.type === 'gravity-slingshot') {
+        this.spawnImpactRing(ev.worldX, ev.worldY, ev.worldZ, 0, 1, 0, 0xe879f9, 5.2, 0.46);
+        this.spawnParticles(ev.worldX, ev.worldY + 0.2, ev.worldZ, ev.isPlayer ? 26 : 8, 0xf59e0b, 20, 0.54, 1.3);
+        this.spawnParticles(ev.worldX, ev.worldY + 0.3, ev.worldZ, ev.isPlayer ? 14 : 4, 0x38bdf8, 17, 0.46, 1.05);
+        if (ev.isPlayer) {
+          this.audio.playBoostPad();
+          this.applyCameraRecoil(0, -1.6, 0);
+          this.pushCallout('GRAV SLINGSHOT! +175', 'amber', 1.1);
+        }
+      } else if (ev.type === 'star-core-nova') {
+        this.spawnImpactRing(ev.worldX, ev.worldY, ev.worldZ, 0, 1, 0, 0xfbbf24, 4.8, 0.44);
+        this.spawnParticles(ev.worldX, ev.worldY + 0.4, ev.worldZ, ev.isPlayer ? 26 : 8, 0xfbbf24, 19, 0.54, 1.3);
+        this.spawnParticles(ev.worldX, ev.worldY + 0.4, ev.worldZ, ev.isPlayer ? 14 : 4, 0xe879f9, 16, 0.48, 1.05);
+        if (ev.isPlayer) {
+          this.audio.playRingPickup(true);
+          this.applyCameraRecoil(0, -1.2, 0);
+          this.pushCallout('STAR-CORE NOVA! +150', 'amber', 1.05);
+          if (ev.obstacleId) {
+            const ov = this.obstacleVisuals.find((o) => o.id === ev.obstacleId);
+            if (ov) ov.group.visible = false;
+          }
+        }
       } else if (ev.type === 'obstacle-hit') {
         const nx = ev.normalX ?? 0;
         const ny = ev.normalY ?? 0.3;
@@ -1283,6 +1381,11 @@ export class SaucerGameEngine {
         for (const rv of this.ringVisuals) {
           rv.group.visible = true;
         }
+        for (const ov of this.obstacleVisuals) {
+          if (ov.kind === 'frost-crystal' || ov.kind === 'pollen-orb' || ov.kind === 'star-core') {
+            ov.group.visible = true;
+          }
+        }
         this.resetCheckpointVisuals();
       } else if (ev.type === 'race-finish' && ev.isPlayer) {
         const rank = getRacerRank(this.racers, 'player');
@@ -1428,19 +1531,27 @@ export class SaucerGameEngine {
         (isBoostActive ? 0.62 : 0.36) - r.hoverY * 0.06,
       );
 
-      // Emit subtle thruster exhaust trail particles while moving fast
+      // Emit subtle thruster exhaust trail particles while moving fast OR icy frost / biolume nectar / zero-G stardust!
       if (
         this.phase === 'playing' &&
         dt > 0 &&
-        (r.isBoosting || r.boostPadTimer > 0) &&
+        (r.isBoosting || r.boostPadTimer > 0 || r.isOnIce || r.isInNectar || r.isInLowGravity) &&
         Math.random() < (r.isPlayer ? 0.65 : 0.2)
       ) {
+        const trailCol =
+          r.isInLowGravity && !r.isBoosting
+            ? 0xe879f9
+            : r.isInNectar && !r.isBoosting
+            ? 0x34d399
+            : r.isOnIce && !r.isBoosting
+            ? 0xbaf2ff
+            : r.glowColor;
         this.spawnParticles(
           craftPos.x - frame.tangent.x * 2.4,
-          craftPos.y - frame.tangent.y * 2.4,
+          craftPos.y - frame.tangent.y * 2.4 - (r.isOnIce || r.isInNectar ? 0.65 : 0),
           craftPos.z - frame.tangent.z * 2.4,
           1,
-          r.glowColor,
+          trailCol,
           3.2,
           0.26,
           r.isPlayer ? 0.95 : 0.7,
@@ -1570,7 +1681,32 @@ export class SaucerGameEngine {
           const s = 1.0 + Math.sin(elapsed * 5.5 + i * 1.3) * 0.08;
           ov.pulsePart.scale.setScalar(s);
         }
-      } else if (ov.kind === 'rock-pillar' && ov.pulsePart) {
+      } else if (ov.kind === 'frost-crystal' || ov.kind === 'pollen-orb' || ov.kind === 'star-core') {
+        if (ov.spinPart) {
+          ov.spinPart.rotation.y =
+            elapsed * (ov.kind === 'star-core' ? 3.2 : ov.kind === 'pollen-orb' ? 2.8 : 2.4) + i;
+          ov.spinPart.position.y = 2.2 + Math.sin(elapsed * 3.6 + i) * 0.28;
+        }
+      } else if (ov.kind === 'gravity-well') {
+        if (ov.spinPart) {
+          ov.spinPart.rotation.y = elapsed * 3.8 + i;
+          ov.spinPart.rotation.z = Math.sin(elapsed * 2.2 + i) * 0.28;
+        }
+        if (ov.pulsePart) {
+          const s = 1.0 + Math.sin(elapsed * 6.0 + i) * 0.1;
+          ov.pulsePart.scale.setScalar(s);
+        }
+      } else if (ov.kind === 'spore-pad' && ov.pulsePart) {
+        const s = 1.0 + Math.sin(elapsed * 4.4 + i) * 0.06;
+        ov.pulsePart.scale.set(s, 1.0 + Math.cos(elapsed * 4.4 + i) * 0.07, s);
+      } else if (ov.kind === 'meteor-spire') {
+        if (ov.spinPart) {
+          ov.spinPart.rotation.y = elapsed * 1.45 * (i % 2 === 0 ? 1 : -1) + i;
+        }
+      } else if (
+        (ov.kind === 'rock-pillar' || ov.kind === 'ice-spire' || ov.kind === 'spore-stalk') &&
+        ov.pulsePart
+      ) {
         const s = 1.0 + Math.sin(elapsed * 3.2 + i) * 0.03;
         ov.pulsePart.scale.set(s, s, 1);
       }
@@ -1581,6 +1717,21 @@ export class SaucerGameEngine {
       const sg = this.speedGateVisuals[i];
       const dir = i % 2 === 0 ? 1 : -1;
       sg.spinRing.rotation.z = elapsed * 1.85 * dir + i;
+    }
+
+    // Animate Alpine Blizzard Crosswind blowing snow-streak ribbons across the road!
+    for (let i = 0; i < this.windZoneVisuals.length; i++) {
+      const wz = this.windZoneVisuals[i];
+      for (let k = 0; k < wz.streaks.length; k++) {
+        const st = wz.streaks[k];
+        const frac = (((elapsed * st.speed + st.phase) % 1) + 1) % 1;
+        const offset = (frac - 0.5) * st.span * st.dir;
+        st.mesh.position.set(
+          st.basePos.x + st.rightVec.x * offset,
+          st.basePos.y + st.rightVec.y * offset,
+          st.basePos.z + st.rightVec.z * offset,
+        );
+      }
     }
   }
 

@@ -155,3 +155,248 @@ test('Level 1 solar-canyon is a massive 5-zone loop with diverse terrain, safe o
   }
 });
 
+test('Level 2 glacier-spire is a ~3.8km 6-zone alpine loop with 50m+ relief, ice patches, wind zones, shatterable frost crystals, and clean obstacle clearance', () => {
+  const def = CIRCUITS['glacier-spire'];
+  const track = buildBakedTrack(def, 600);
+
+  assert.ok(
+    track.totalLength > 3200,
+    `Level 2 glacier-spire should exceed 3,200m (got ${track.totalLength.toFixed(0)}m)`,
+  );
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minW = Infinity;
+  let maxW = -Infinity;
+  for (const f of track.frames) {
+    minY = Math.min(minY, f.pos.y);
+    maxY = Math.max(maxY, f.pos.y);
+    minW = Math.min(minW, f.width);
+    maxW = Math.max(maxW, f.width);
+  }
+  assert.ok(
+    maxY - minY >= 45,
+    `Level 2 alpine elevation relief should be >= 45m (got ${(maxY - minY).toFixed(1)}m)`,
+  );
+  assert.ok(
+    maxW - minW >= 22,
+    `Level 2 road width diversity should be >= 22m (got ${(maxW - minW).toFixed(1)}m)`,
+  );
+  assert.ok(def.boostPads.length >= 9, 'Level 2 should feature strategic boost pads');
+  assert.ok((def.obstacles?.length ?? 0) >= 8, 'Level 2 should feature diverse glacial obstacles');
+  assert.ok((def.speedGates?.length ?? 0) >= 4, 'Level 2 should feature cryo Slingshot Turbo Gates');
+  assert.ok((def.icePatches?.length ?? 0) >= 3, 'Level 2 should feature Blue-Ice Slip-Glide Zones');
+  assert.ok((def.windZones?.length ?? 0) >= 2, 'Level 2 should feature Alpine Blizzard Crosswind Zones');
+
+  const kinds = new Set((def.obstacles ?? []).map((o) => o.kind));
+  assert.ok(
+    kinds.has('ice-spire') && kinds.has('hover-drone') && kinds.has('frost-crystal'),
+    'Level 2 should feature ice-spire, hover-drone, and shatterable frost-crystal obstacles',
+  );
+
+  for (const ob of def.obstacles ?? []) {
+    assert.ok(ob.t > 0.04 && ob.t < 0.96, `obstacle ${ob.id} should stay clear of start/finish straight`);
+    const f = sampleTrackFrame(track, ob.t);
+    const halfW = f.width * 0.5;
+    const leftClearance = halfW + (ob.lateral - ob.radius);
+    const rightClearance = halfW - (ob.lateral + ob.radius);
+    assert.ok(
+      Math.max(leftClearance, rightClearance) >= 12,
+      `obstacle ${ob.id} should always leave >= 12m open passing lane (L=${leftClearance.toFixed(1)}, R=${rightClearance.toFixed(1)})`,
+    );
+
+    if (ob.kind !== 'frost-crystal') {
+      for (const pad of def.boostPads) {
+        const distM = Math.abs(shortestProgressDelta(ob.t, pad.t)) * track.totalLength;
+        const latM = Math.abs(ob.lateral - pad.lateral);
+        assert.ok(
+          distM > pad.length * 0.5 + ob.radius + 4 || latM > pad.width * 0.5 + ob.radius + 2,
+          `solid obstacle ${ob.id} should not overlap boost pad ${pad.id}`,
+        );
+      }
+      for (const ramp of def.jumpRamps) {
+        const distM = Math.abs(shortestProgressDelta(ob.t, ramp.t)) * track.totalLength;
+        const latM = Math.abs(ob.lateral - ramp.lateral);
+        assert.ok(
+          distM > ramp.length * 0.5 + ob.radius + 4 || latM > ramp.width * 0.5 + ob.radius + 2,
+          `solid obstacle ${ob.id} should not overlap jump ramp ${ramp.id}`,
+        );
+      }
+      for (const ud of def.updrafts) {
+        const distM = Math.abs(shortestProgressDelta(ob.t, ud.t)) * track.totalLength;
+        const latM = Math.abs(ob.lateral - ud.lateral);
+        assert.ok(
+          distM > ud.radius + ob.radius + 4 || latM > ud.radius + ob.radius + 2,
+          `solid obstacle ${ob.id} should not overlap updraft ${ud.id}`,
+        );
+      }
+    }
+  }
+});
+
+test('Level 3 biolume-jungle is a ~4km 6-zone alien canopy loop with nectar streams, spore spring-pads, pollen blooms, and clean obstacle clearance', () => {
+  const def = CIRCUITS['biolume-jungle'];
+  const track = buildBakedTrack(def, 600);
+
+  assert.ok(
+    track.totalLength > 3200,
+    `Level 3 biolume-jungle should exceed 3,200m (got ${track.totalLength.toFixed(0)}m)`,
+  );
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minW = Infinity;
+  let maxW = -Infinity;
+  for (const f of track.frames) {
+    minY = Math.min(minY, f.pos.y);
+    maxY = Math.max(maxY, f.pos.y);
+    minW = Math.min(minW, f.width);
+    maxW = Math.max(maxW, f.width);
+  }
+  assert.ok(
+    maxY - minY >= 40,
+    `Level 3 canopy elevation relief should be >= 40m (got ${(maxY - minY).toFixed(1)}m)`,
+  );
+  assert.ok(
+    maxW - minW >= 24,
+    `Level 3 road width diversity should be >= 24m (got ${(maxW - minW).toFixed(1)}m)`,
+  );
+  assert.ok(def.boostPads.length >= 9, 'Level 3 should feature strategic boost pads');
+  assert.ok((def.obstacles?.length ?? 0) >= 10, 'Level 3 should feature diverse canopy obstacles');
+  assert.ok((def.speedGates?.length ?? 0) >= 4, 'Level 3 should feature biolume Slingshot Turbo Gates');
+  assert.ok((def.nectarStreams?.length ?? 0) >= 3, 'Level 3 should feature Luminous Nectar Flow Streams');
+
+  const kinds = new Set((def.obstacles ?? []).map((o) => o.kind));
+  assert.ok(
+    kinds.has('spore-stalk') &&
+      kinds.has('spore-pad') &&
+      kinds.has('pollen-orb') &&
+      kinds.has('hover-drone'),
+    'Level 3 should feature spore-stalk, spore-pad, pollen-orb, and hover-drone obstacles',
+  );
+
+  for (const ob of def.obstacles ?? []) {
+    assert.ok(ob.t > 0.04 && ob.t < 0.96, `obstacle ${ob.id} should stay clear of start/finish straight`);
+    const f = sampleTrackFrame(track, ob.t);
+    const halfW = f.width * 0.5;
+    const leftClearance = halfW + (ob.lateral - ob.radius);
+    const rightClearance = halfW - (ob.lateral + ob.radius);
+    assert.ok(
+      Math.max(leftClearance, rightClearance) >= 12,
+      `obstacle ${ob.id} should always leave >= 12m open passing lane (L=${leftClearance.toFixed(1)}, R=${rightClearance.toFixed(1)})`,
+    );
+
+    if (ob.kind === 'spore-stalk' || ob.kind === 'hover-drone') {
+      for (const pad of def.boostPads) {
+        const distM = Math.abs(shortestProgressDelta(ob.t, pad.t)) * track.totalLength;
+        const latM = Math.abs(ob.lateral - pad.lateral);
+        assert.ok(
+          distM > pad.length * 0.5 + ob.radius + 4 || latM > pad.width * 0.5 + ob.radius + 2,
+          `solid obstacle ${ob.id} should not overlap boost pad ${pad.id}`,
+        );
+      }
+      for (const ramp of def.jumpRamps) {
+        const distM = Math.abs(shortestProgressDelta(ob.t, ramp.t)) * track.totalLength;
+        const latM = Math.abs(ob.lateral - ramp.lateral);
+        assert.ok(
+          distM > ramp.length * 0.5 + ob.radius + 4 || latM > ramp.width * 0.5 + ob.radius + 2,
+          `solid obstacle ${ob.id} should not overlap jump ramp ${ramp.id}`,
+        );
+      }
+      for (const ud of def.updrafts) {
+        const distM = Math.abs(shortestProgressDelta(ob.t, ud.t)) * track.totalLength;
+        const latM = Math.abs(ob.lateral - ud.lateral);
+        assert.ok(
+          distM > ud.radius + ob.radius + 4 || latM > ud.radius + ob.radius + 2,
+          `solid obstacle ${ob.id} should not overlap updraft ${ud.id}`,
+        );
+      }
+    }
+  }
+});
+
+test('Level 4 nebula-ridge is a ~4.2km True 3D Figure-8 Cosmic Overpass with 50m+ relief, Zero-G strips, Gravity Wells, Star-Cores, and clean obstacle clearance', () => {
+  const def = CIRCUITS['nebula-ridge'];
+  const track = buildBakedTrack(def, 600);
+
+  assert.equal(def.hasOverpass, true, 'Level 4 nebula-ridge must feature a True 3D Figure-8 Overpass');
+  assert.ok(
+    track.totalLength > 3600,
+    `Level 4 nebula-ridge should exceed 3,600m (got ${track.totalLength.toFixed(0)}m)`,
+  );
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minW = Infinity;
+  let maxW = -Infinity;
+  for (const f of track.frames) {
+    minY = Math.min(minY, f.pos.y);
+    maxY = Math.max(maxY, f.pos.y);
+    minW = Math.min(minW, f.width);
+    maxW = Math.max(maxW, f.width);
+  }
+  assert.ok(
+    maxY - minY >= 48,
+    `Level 4 cosmic elevation relief should be >= 48m (got ${(maxY - minY).toFixed(1)}m)`,
+  );
+  assert.ok(
+    maxW - minW >= 24,
+    `Level 4 road width diversity should be >= 24m (got ${(maxW - minW).toFixed(1)}m)`,
+  );
+  assert.ok(def.boostPads.length >= 10, 'Level 4 should feature strategic boost pads');
+  assert.ok((def.obstacles?.length ?? 0) >= 10, 'Level 4 should feature diverse cosmic obstacles');
+  assert.ok((def.speedGates?.length ?? 0) >= 4, 'Level 4 should feature cosmic Slingshot Turbo Gates');
+  assert.ok((def.lowGravityZones?.length ?? 0) >= 3, 'Level 4 should feature Zero-G Low-Gravity Sky Strips');
+
+  const kinds = new Set((def.obstacles ?? []).map((o) => o.kind));
+  assert.ok(
+    kinds.has('meteor-spire') &&
+      kinds.has('gravity-well') &&
+      kinds.has('star-core') &&
+      kinds.has('hover-drone'),
+    'Level 4 should feature meteor-spire, gravity-well, star-core, and hover-drone obstacles',
+  );
+
+  for (const ob of def.obstacles ?? []) {
+    assert.ok(ob.t > 0.04 && ob.t < 0.96, `obstacle ${ob.id} should stay clear of start/finish straight`);
+    const f = sampleTrackFrame(track, ob.t);
+    const halfW = f.width * 0.5;
+    const leftClearance = halfW + (ob.lateral - ob.radius);
+    const rightClearance = halfW - (ob.lateral + ob.radius);
+    assert.ok(
+      Math.max(leftClearance, rightClearance) >= 12,
+      `obstacle ${ob.id} should always leave >= 12m open passing lane (L=${leftClearance.toFixed(1)}, R=${rightClearance.toFixed(1)})`,
+    );
+
+    if (ob.kind === 'meteor-spire' || ob.kind === 'hover-drone') {
+      for (const pad of def.boostPads) {
+        const distM = Math.abs(shortestProgressDelta(ob.t, pad.t)) * track.totalLength;
+        const latM = Math.abs(ob.lateral - pad.lateral);
+        assert.ok(
+          distM > pad.length * 0.5 + ob.radius + 4 || latM > pad.width * 0.5 + ob.radius + 2,
+          `solid obstacle ${ob.id} should not overlap boost pad ${pad.id}`,
+        );
+      }
+      for (const ramp of def.jumpRamps) {
+        const distM = Math.abs(shortestProgressDelta(ob.t, ramp.t)) * track.totalLength;
+        const latM = Math.abs(ob.lateral - ramp.lateral);
+        assert.ok(
+          distM > ramp.length * 0.5 + ob.radius + 4 || latM > ramp.width * 0.5 + ob.radius + 2,
+          `solid obstacle ${ob.id} should not overlap jump ramp ${ramp.id}`,
+        );
+      }
+      for (const ud of def.updrafts) {
+        const distM = Math.abs(shortestProgressDelta(ob.t, ud.t)) * track.totalLength;
+        const latM = Math.abs(ob.lateral - ud.lateral);
+        assert.ok(
+          distM > ud.radius + ob.radius + 4 || latM > ud.radius + ob.radius + 2,
+          `solid obstacle ${ob.id} should not overlap updraft ${ud.id}`,
+        );
+      }
+    }
+  }
+});
+
+
+
+

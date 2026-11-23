@@ -89,6 +89,19 @@ export interface SpeedGateVisual {
   spinRing: THREE.Group;
 }
 
+export interface WindZoneVisual {
+  group: THREE.Group;
+  streaks: Array<{
+    mesh: THREE.Mesh;
+    basePos: THREE.Vector3;
+    rightVec: THREE.Vector3;
+    span: number;
+    phase: number;
+    speed: number;
+    dir: number;
+  }>;
+}
+
 export function createTrackTextures(
   biome: BiomeTheme,
   maxAnisotropy: number,
@@ -2274,7 +2287,7 @@ export function buildTrackMesh(
         const dtWrap = Math.min(Math.abs(g.t - t), 1 - Math.abs(g.t - t));
         if (dtWrap < 0.08) continue;
         const horizDist = Math.hypot(g.pos.x - f.pos.x, g.pos.z - f.pos.z);
-        if (horizDist < g.width * 0.5 + 8 && g.pos.y < f.pos.y - 3) {
+        if (horizDist < g.width * 0.5 + 26 && g.pos.y < f.pos.y - 3) {
           blocksUnderpass = true;
           break;
         }
@@ -2953,41 +2966,453 @@ export function buildCanyonEnvironment(
         rotSpeed: 0.03 * (idx % 2 === 0 ? 1 : -1),
       });
     });
+  } else if (biome === 'glacier') {
+    // GRAND ARCTIC ALPINE SCENARIO (Level 2 — Glacier Spire):
+    // 1. Three Shimmering Aurora Borealis Sky Curtains curving across the polar sky!
+    const auroraCanvas = document.createElement('canvas');
+    auroraCanvas.width = 512;
+    auroraCanvas.height = 128;
+    const actx = auroraCanvas.getContext('2d')!;
+    const aGrad = actx.createLinearGradient(0, 0, 512, 0);
+    aGrad.addColorStop(0.0, 'rgba(56, 189, 248, 0)');
+    aGrad.addColorStop(0.18, 'rgba(52, 211, 153, 0.75)');
+    aGrad.addColorStop(0.48, 'rgba(45, 249, 242, 0.85)');
+    aGrad.addColorStop(0.76, 'rgba(168, 85, 247, 0.72)');
+    aGrad.addColorStop(1.0, 'rgba(56, 189, 248, 0)');
+    actx.fillStyle = aGrad;
+    actx.fillRect(0, 0, 512, 128);
+    // Vertical curtain wisps & soft top/bottom alpha mask
+    actx.globalCompositeOperation = 'destination-in';
+    const vGrad = actx.createLinearGradient(0, 0, 0, 128);
+    vGrad.addColorStop(0.0, 'rgba(255,255,255,0)');
+    vGrad.addColorStop(0.32, 'rgba(255,255,255,0.85)');
+    vGrad.addColorStop(0.72, 'rgba(255,255,255,0.95)');
+    vGrad.addColorStop(1.0, 'rgba(255,255,255,0)');
+    actx.fillStyle = vGrad;
+    actx.fillRect(0, 0, 512, 128);
+    actx.globalCompositeOperation = 'source-over';
+    for (let s = 0; s < 36; s++) {
+      const sx = (s / 36) * 512;
+      actx.fillStyle = s % 2 === 0 ? 'rgba(190, 255, 248, 0.24)' : 'rgba(167, 139, 250, 0.18)';
+      actx.fillRect(sx, 14, 5, 100);
+    }
+    const auroraTex = new THREE.CanvasTexture(auroraCanvas);
+    auroraTex.colorSpace = THREE.SRGBColorSpace;
+    const auroraMat = new THREE.MeshBasicMaterial({
+      map: auroraTex,
+      transparent: true,
+      opacity: 0.62,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false,
+    });
+    const auroraConfigs = [
+      { x: -135, y: 158, z: -560, radius: 520, height: 92, arc: Math.PI * 0.72, rotY: -0.45 },
+      { x: -380, y: 185, z: 320, radius: 480, height: 86, arc: Math.PI * 0.68, rotY: 2.35 },
+      { x: 260, y: 168, z: 220, radius: 440, height: 82, arc: Math.PI * 0.65, rotY: 0.95 },
+    ];
+    auroraConfigs.forEach((ac, idx) => {
+      const curtain = new THREE.Mesh(
+        new THREE.CylinderGeometry(ac.radius, ac.radius * 0.96, ac.height, 28, 1, true, 0, ac.arc),
+        auroraMat,
+      );
+      curtain.position.set(ac.x, ac.y, ac.z);
+      curtain.rotation.y = ac.rotY;
+      env.add(curtain);
+      floatingProps.push({
+        mesh: curtain,
+        baseY: ac.y,
+        phase: idx * 2.1,
+        bobAmp: 6.5,
+        bobSpeed: 0.42 + idx * 0.08,
+        rotSpeed: 0.015 * (idx % 2 === 0 ? 1 : -1),
+      });
+    });
+
+    // 2. Multi-Faceted Snow-Capped Alpine Peaks (Instanced 2-layer Granite Ridge + Snow Cap)
+    const peakBaseGeo = new THREE.ConeGeometry(28, 76, 6);
+    peakBaseGeo.translate(0, 38, 0);
+    const peakCapGeo = new THREE.ConeGeometry(14.5, 36, 6);
+    peakCapGeo.translate(0, 61, 0);
+
+    const peakBaseMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.68,
+      metalness: 0.14,
+      flatShading: true,
+    });
+    const peakCapMat = new THREE.MeshStandardMaterial({
+      color: 0xf0f9ff,
+      emissive: 0x38bdf8,
+      emissiveIntensity: 0.12,
+      roughness: 0.34,
+      metalness: 0.08,
+      flatShading: true,
+    });
+
+    const peaks: Array<{
+      x: number;
+      z: number;
+      sx: number;
+      sy: number;
+      sz: number;
+      rot: number;
+      baseCol: THREE.Color;
+    }> = [];
+    const slateBlue = new THREE.Color('#2d5278');
+    const glacialSlate = new THREE.Color('#4a7ca6');
+    const frostSlate = new THREE.Color('#6fa6cc');
+
+    for (let attempt = 0; attempt < 640 && peaks.length < 112; attempt++) {
+      const angle = rand() * Math.PI * 2;
+      const radius = 120 + rand() * 1080;
+      const x = -165 + Math.cos(angle) * radius;
+      const z = 40 + Math.sin(angle) * radius;
+      const { dist, halfWidth } = nearestTrackInfo(x, z);
+      if (dist < halfWidth + 52) continue;
+      // Keep opening launch vista & Mirrored Frozen Fjord Lake clear of blocking mountains
+      if (x > -165 && x < 120 && z > -360 && z < 80) continue;
+      if (x > -690 && x < -230 && z > 100 && z < 540) continue;
+
+      peaks.push({
+        x,
+        z,
+        sx: 0.85 + rand() * 2.15,
+        sy: 0.85 + rand() * 2.45,
+        sz: 0.85 + rand() * 2.15,
+        rot: rand() * Math.PI * 2,
+        baseCol: slateBlue.clone().lerp(rand() > 0.5 ? frostSlate : glacialSlate, rand() * 0.85),
+      });
+    }
+
+    const peakBaseInst = new THREE.InstancedMesh(peakBaseGeo, peakBaseMat, peaks.length);
+    const peakCapInst = new THREE.InstancedMesh(peakCapGeo, peakCapMat, peaks.length);
+    peaks.forEach((p, idx) => {
+      dummy.position.set(p.x, -16, p.z);
+      dummy.rotation.set(0, p.rot, 0);
+      dummy.scale.set(p.sx, p.sy, p.sz);
+      dummy.updateMatrix();
+      peakBaseInst.setMatrixAt(idx, dummy.matrix);
+      peakBaseInst.setColorAt(idx, p.baseCol);
+      peakCapInst.setMatrixAt(idx, dummy.matrix);
+    });
+    peakBaseInst.instanceMatrix.needsUpdate = true;
+    peakCapInst.instanceMatrix.needsUpdate = true;
+    if (peakBaseInst.instanceColor) peakBaseInst.instanceColor.needsUpdate = true;
+    peakBaseInst.computeBoundingSphere();
+    peakCapInst.computeBoundingSphere();
+    env.add(peakBaseInst, peakCapInst);
+
+    // 3. Gleaming Translucent Crystal Glacier Clusters flanking high alpine ridges
+    const crystalGeo = new THREE.OctahedronGeometry(7.5, 0);
+    crystalGeo.scale(0.85, 2.5, 0.85);
+    crystalGeo.translate(0, 14, 0);
+    const crystalMat = new THREE.MeshStandardMaterial({
+      color: 0x7efcf7,
+      emissive: 0x0ea5e9,
+      emissiveIntensity: 0.34,
+      roughness: 0.16,
+      metalness: 0.28,
+      flatShading: true,
+    });
+    const crystals: Array<{ x: number; z: number; s: number; rot: number; tilt: number }> = [];
+    for (let attempt = 0; attempt < 260 && crystals.length < 48; attempt++) {
+      const t = rand();
+      const f = sampleTrackFrame(track, t);
+      const side = rand() > 0.5 ? 1 : -1;
+      const off = f.width * 0.5 + 24 + rand() * 58;
+      const cx = f.pos.x + f.right.x * off * side;
+      const cz = f.pos.z + f.right.z * off * side;
+      const info = nearestTrackInfo(cx, cz);
+      if (info.dist < info.halfWidth + 20) continue;
+      crystals.push({ x: cx, z: cz, s: 0.65 + rand() * 1.45, rot: rand() * Math.PI * 2, tilt: (rand() - 0.5) * 0.34 });
+    }
+    if (crystals.length > 0) {
+      const crystalInst = new THREE.InstancedMesh(crystalGeo, crystalMat, crystals.length);
+      crystals.forEach((c, idx) => {
+        dummy.position.set(c.x, -10, c.z);
+        dummy.rotation.set(c.tilt, c.rot, c.tilt * 0.6);
+        dummy.scale.setScalar(c.s);
+        dummy.updateMatrix();
+        crystalInst.setMatrixAt(idx, dummy.matrix);
+      });
+      crystalInst.instanceMatrix.needsUpdate = true;
+      crystalInst.computeBoundingSphere();
+      env.add(crystalInst);
+    }
+
+    // 4. Mirrored Frozen Fjord Lake & 18 Floating Faceted Icebergs beneath Zone 4!
+    const fjordMat = new THREE.MeshPhysicalMaterial({
+      color: 0x168ec4,
+      emissive: 0x0b4c72,
+      emissiveIntensity: 0.36,
+      roughness: 0.1,
+      metalness: 0.18,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.06,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const fjordLake = new THREE.Mesh(new THREE.CircleGeometry(210, 32), fjordMat);
+    fjordLake.rotation.x = -Math.PI / 2;
+    fjordLake.scale.set(1.18, 0.94, 1);
+    fjordLake.position.set(-455, -6.5, 325);
+    env.add(fjordLake);
+
+    const iceRim = new THREE.Mesh(
+      new THREE.RingGeometry(198, 238, 32),
+      new THREE.MeshStandardMaterial({ color: 0xd9f3ff, roughness: 0.42, metalness: 0.08 }),
+    );
+    iceRim.rotation.x = -Math.PI / 2;
+    iceRim.scale.set(1.18, 0.94, 1);
+    iceRim.position.set(-455, -6.65, 325);
+    env.add(iceRim);
+
+    const bergGeo = new THREE.DodecahedronGeometry(14, 0);
+    bergGeo.scale(1.35, 0.72, 1.1);
+    const bergMat = new THREE.MeshStandardMaterial({
+      color: 0xe6f8ff,
+      emissive: 0x38bdf8,
+      emissiveIntensity: 0.18,
+      roughness: 0.24,
+      metalness: 0.14,
+      flatShading: true,
+    });
+    const bergs: Array<{ x: number; z: number; sx: number; sy: number; rot: number }> = [];
+    for (let i = 0; i < 28 && bergs.length < 18; i++) {
+      const a = (i / 28) * Math.PI * 2 + rand() * 0.2;
+      const r = 42 + rand() * 145;
+      const bx = -455 + Math.cos(a) * r * 1.12;
+      const bz = 325 + Math.sin(a) * r * 0.88;
+      const info = nearestTrackInfo(bx, bz);
+      if (info.dist < info.halfWidth + 24) continue;
+      bergs.push({ x: bx, z: bz, sx: 0.75 + rand() * 1.35, sy: 0.65 + rand() * 1.1, rot: rand() * Math.PI * 2 });
+    }
+    if (bergs.length > 0) {
+      const bergInst = new THREE.InstancedMesh(bergGeo, bergMat, bergs.length);
+      bergs.forEach((b, idx) => {
+        dummy.position.set(b.x, -4.2, b.z);
+        dummy.rotation.set(0, b.rot, 0);
+        dummy.scale.set(b.sx, b.sy, b.sx);
+        dummy.updateMatrix();
+        bergInst.setMatrixAt(idx, dummy.matrix);
+      });
+      bergInst.instanceMatrix.needsUpdate = true;
+      bergInst.computeBoundingSphere();
+      env.add(bergInst);
+    }
+
+    // 5. Instanced Snowy Arctic Evergreen Pines framing the Frozen Fjord banks & ridges!
+    const pineSpots: Array<{ x: number; z: number; s: number; rot: number }> = [];
+    for (let i = 0; i < 64 && pineSpots.length < 48; i++) {
+      const a = (i / 64) * Math.PI * 2 + rand() * 0.14;
+      const r = 185 + rand() * 90;
+      const px = -455 + Math.cos(a) * r * 1.15;
+      const pz = 325 + Math.sin(a) * r * 0.92;
+      const info = nearestTrackInfo(px, pz);
+      if (info.dist < info.halfWidth + 18) continue;
+      pineSpots.push({ x: px, z: pz, s: 0.9 + rand() * 0.85, rot: rand() * Math.PI * 2 });
+    }
+    if (pineSpots.length > 0) {
+      const pTrunkGeo = new THREE.CylinderGeometry(0.65, 1.1, 7, 6);
+      pTrunkGeo.translate(0, 3.5, 0);
+      const pFoliageGeo = new THREE.ConeGeometry(5.6, 15, 6);
+      pFoliageGeo.translate(0, 13, 0);
+      const pSnowGeo = new THREE.ConeGeometry(3.8, 8.5, 6);
+      pSnowGeo.translate(0, 17.5, 0);
+
+      const pTrunkInst = new THREE.InstancedMesh(
+        pTrunkGeo,
+        new THREE.MeshStandardMaterial({ color: 0x4b382d, roughness: 0.9 }),
+        pineSpots.length,
+      );
+      const pFoliageInst = new THREE.InstancedMesh(
+        pFoliageGeo,
+        new THREE.MeshStandardMaterial({ color: 0x195e56, roughness: 0.78, flatShading: true }),
+        pineSpots.length,
+      );
+      const pSnowInst = new THREE.InstancedMesh(
+        pSnowGeo,
+        new THREE.MeshStandardMaterial({ color: 0xeaf8ff, roughness: 0.45, flatShading: true }),
+        pineSpots.length,
+      );
+      pineSpots.forEach((p, idx) => {
+        dummy.position.set(p.x, -7.2, p.z);
+        dummy.rotation.set(0, p.rot, 0);
+        dummy.scale.setScalar(p.s);
+        dummy.updateMatrix();
+        pTrunkInst.setMatrixAt(idx, dummy.matrix);
+        pFoliageInst.setMatrixAt(idx, dummy.matrix);
+        pSnowInst.setMatrixAt(idx, dummy.matrix);
+      });
+      pTrunkInst.instanceMatrix.needsUpdate = true;
+      pFoliageInst.instanceMatrix.needsUpdate = true;
+      pSnowInst.instanceMatrix.needsUpdate = true;
+      pTrunkInst.computeBoundingSphere();
+      pFoliageInst.computeBoundingSphere();
+      pSnowInst.computeBoundingSphere();
+      env.add(pTrunkInst, pFoliageInst, pSnowInst);
+    }
+
+    // 6. Three Arctic Research Observatory Domes + Rotating Radar Dish Towers!
+    // Warm amber windows create rich figure-ground contrast against the cool Arctic cyan-blue world.
+    const domeWhiteMat = new THREE.MeshPhysicalMaterial({
+      color: 0xeff8ff,
+      roughness: 0.28,
+      metalness: 0.22,
+      clearcoat: 0.8,
+    });
+    const domeMetalMat = new THREE.MeshStandardMaterial({
+      color: 0x24344c,
+      roughness: 0.45,
+      metalness: 0.78,
+    });
+    const warmWindowMat = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      emissive: 0xff9f1c,
+      emissiveIntensity: 1.55,
+      roughness: 0.2,
+    });
+    const cyanBeaconMat = new THREE.MeshBasicMaterial({ color: 0x5dfcf7 });
+    const outpostSpots = [
+      { t: 0.056, side: 1, off: 44 }, // Framed cleanly in opening start vista!
+      { t: 0.695, side: -1, off: 50 }, // Alpine Observatory S-Bend!
+      { t: 0.905, side: 1, off: 54 }, // Aurora Amphitheater overlook!
+    ];
+    outpostSpots.forEach((spot, idx) => {
+      const f = sampleTrackFrame(track, spot.t);
+      const ox = f.pos.x + f.right.x * (f.width * 0.5 + spot.off) * spot.side;
+      const oz = f.pos.z + f.right.z * (f.width * 0.5 + spot.off) * spot.side;
+      const oy = Math.max(-8, f.pos.y - 12);
+
+      const station = new THREE.Group();
+      const basePad = new THREE.Mesh(new THREE.CylinderGeometry(16, 19, 14, 8), domeMetalMat);
+      basePad.position.y = 7;
+      station.add(basePad);
+
+      const dome = new THREE.Mesh(
+        new THREE.SphereGeometry(14.5, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.54),
+        domeWhiteMat,
+      );
+      dome.position.y = 14;
+      station.add(dome);
+
+      const windowBand = new THREE.Mesh(
+        new THREE.CylinderGeometry(14.7, 14.7, 2.8, 16, 1, true),
+        warmWindowMat,
+      );
+      windowBand.position.y = 16.5;
+      station.add(windowBand);
+
+      // Radar mast + rotating parabolic dish
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.8, 22, 6), domeMetalMat);
+      mast.position.set(8.5, 24, 0);
+      station.add(mast);
+
+      const radarHead = new THREE.Group();
+      radarHead.position.set(8.5, 35.5, 0);
+      const dish = new THREE.Mesh(
+        new THREE.SphereGeometry(5.6, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.42),
+        domeWhiteMat,
+      );
+      dish.rotation.x = Math.PI * 0.65;
+      radarHead.add(dish);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.95, 8, 8), cyanBeaconMat);
+      tip.position.set(0, 2.2, 2.8);
+      radarHead.add(tip);
+      station.add(radarHead);
+
+      floatingProps.push({
+        mesh: radarHead,
+        baseY: 35.5,
+        phase: idx * 1.9,
+        bobAmp: 0,
+        bobSpeed: 0,
+        rotSpeed: 0.72 * (idx % 2 === 0 ? 1 : -1),
+      });
+
+      station.position.set(ox, oy, oz);
+      env.add(station);
+    });
+
+    // 7. Floating Ice-Crystal Shards gently bobbing around alpine summit & aurora ridges!
+    const shardGeo = new THREE.OctahedronGeometry(3.4, 0);
+    shardGeo.scale(0.65, 1.8, 0.65);
+    const shardMat = new THREE.MeshStandardMaterial({
+      color: 0xa5f3fc,
+      emissive: 0x06b6d4,
+      emissiveIntensity: 0.85,
+      roughness: 0.14,
+      metalness: 0.3,
+      flatShading: true,
+    });
+    for (let i = 0; i < 14; i++) {
+      const f = sampleTrackFrame(track, (i + 0.42) / 14);
+      const side = i % 2 === 0 ? -1 : 1;
+      const off = f.width * 0.5 + 18 + rand() * 26;
+      const shard = new THREE.Mesh(shardGeo, shardMat);
+      const baseY = f.pos.y + 12 + rand() * 18;
+      shard.position.set(f.pos.x + f.right.x * off * side, baseY, f.pos.z + f.right.z * off * side);
+      env.add(shard);
+      floatingProps.push({
+        mesh: shard,
+        baseY,
+        phase: i * 1.15,
+        bobAmp: 2.2,
+        bobSpeed: 1.2 + (i % 3) * 0.25,
+        rotSpeed: 0.65 * (i % 2 === 0 ? 1 : -1),
+      });
+    }
   } else if (biome === 'biolume') {
-    // Giant alien glowing mushroom trees (stalks + luminous domed caps) + floating jellyfish spores!
-    const stalkGeo = new THREE.CylinderGeometry(1.4, 2.8, 36, 8);
-    stalkGeo.translate(0, 18, 0);
-    const capGeo = new THREE.SphereGeometry(11.5, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    // GRAND BIOLUMINESCENT ALIEN RAINFOREST SCENARIO (Level 3 — Biolume Jungle):
+    // 1. Towering 3-Layer Giant Glow-Mushroom Forest (120 instanced ribbed stalks + luminous caps + under-gill rings!)
+    const stalkGeo = new THREE.CylinderGeometry(1.6, 3.3, 42, 8);
+    stalkGeo.translate(0, 21, 0);
+    const capGeo = new THREE.SphereGeometry(13.0, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.54);
     capGeo.scale(1, 0.52, 1);
+    const gillGeo = new THREE.TorusGeometry(8.8, 0.85, 6, 16);
+    gillGeo.rotateX(Math.PI / 2);
 
     const stalkMat = new THREE.MeshStandardMaterial({
-      color: 0x164e54,
-      roughness: 0.72,
-      metalness: 0.1,
+      color: 0x134a52,
+      roughness: 0.7,
+      metalness: 0.12,
     });
     const capMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       emissive: 0x10b981,
-      emissiveIntensity: 0.55,
-      roughness: 0.32,
+      emissiveIntensity: 0.58,
+      roughness: 0.28,
       metalness: 0.12,
     });
+    const gillMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
     const placements: Array<{ x: number; y: number; z: number; sx: number; sy: number; rot: number; tint: THREE.Color }> = [];
-    const capPalette = [new THREE.Color(0x34d399), new THREE.Color(0x2df9f2), new THREE.Color(0xf472b6), new THREE.Color(0xa78bfa)];
-    for (let attempt = 0; attempt < 420 && placements.length < 96; attempt++) {
+    const capPalette = [
+      new THREE.Color(0x34d399),
+      new THREE.Color(0x2df9f2),
+      new THREE.Color(0xf472b6),
+      new THREE.Color(0xa78bfa),
+      new THREE.Color(0xfde047),
+    ];
+    for (let attempt = 0; attempt < 680 && placements.length < 120; attempt++) {
       const angle = rand() * Math.PI * 2;
-      const radius = 70 + rand() * 640;
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+      const radius = 105 + rand() * 1020;
+      const x = 140 + Math.cos(angle) * radius;
+      const z = 80 + Math.sin(angle) * radius;
       const { dist, halfWidth } = nearestTrackInfo(x, z);
-      if (dist < halfWidth + 32) continue;
+      if (dist < halfWidth + 46) continue;
+      // Keep opening launch vista & Biolume Lagoon clear of blocking giant mushrooms
+      if (x > -145 && x < 145 && z > -360 && z < 80) continue;
+      if (x > 330 && x < 690 && z > 160 && z < 540) continue;
+
       placements.push({
         x,
         y: -18,
         z,
-        sx: 0.8 + rand() * 1.65,
-        sy: 0.85 + rand() * 2.1,
+        sx: 0.85 + rand() * 1.9,
+        sy: 0.9 + rand() * 2.3,
         rot: rand() * Math.PI * 2,
         tint: capPalette[Math.floor(rand() * capPalette.length)],
       });
@@ -2995,6 +3420,7 @@ export function buildCanyonEnvironment(
 
     const stalkInst = new THREE.InstancedMesh(stalkGeo, stalkMat, placements.length);
     const capInst = new THREE.InstancedMesh(capGeo, capMat, placements.length);
+    const gillInst = new THREE.InstancedMesh(gillGeo, gillMat, placements.length);
     placements.forEach((p, idx) => {
       dummy.position.set(p.x, p.y, p.z);
       dummy.rotation.set(0, p.rot, 0);
@@ -3002,38 +3428,242 @@ export function buildCanyonEnvironment(
       dummy.updateMatrix();
       stalkInst.setMatrixAt(idx, dummy.matrix);
 
-      dummy.position.set(p.x, p.y + 34 * p.sy, p.z);
-      dummy.scale.set(p.sx * 1.12, p.sx * 1.12, p.sx * 1.12);
+      dummy.position.set(p.x, p.y + 40 * p.sy, p.z);
+      dummy.scale.set(p.sx * 1.15, p.sx * 1.15, p.sx * 1.15);
       dummy.updateMatrix();
       capInst.setMatrixAt(idx, dummy.matrix);
       capInst.setColorAt(idx, p.tint);
+
+      dummy.position.set(p.x, p.y + 39.2 * p.sy, p.z);
+      dummy.scale.set(p.sx * 1.05, p.sx * 1.05, p.sx * 1.05);
+      dummy.updateMatrix();
+      gillInst.setMatrixAt(idx, dummy.matrix);
+      gillInst.setColorAt(idx, p.tint);
     });
     stalkInst.instanceMatrix.needsUpdate = true;
     capInst.instanceMatrix.needsUpdate = true;
+    gillInst.instanceMatrix.needsUpdate = true;
     if (capInst.instanceColor) capInst.instanceColor.needsUpdate = true;
-    env.add(stalkInst, capInst);
+    if (gillInst.instanceColor) gillInst.instanceColor.needsUpdate = true;
+    stalkInst.computeBoundingSphere();
+    capInst.computeBoundingSphere();
+    gillInst.computeBoundingSphere();
+    env.add(stalkInst, capInst, gillInst);
 
-    // Floating bobbing bioluminescent spore orbs framing the jungle canopy!
+    // 2. Luminous Biolume Lagoon & 22 Giant Glowing Floating Lily-Pads beneath Zone 4!
+    const lagoonMat = new THREE.MeshPhysicalMaterial({
+      color: 0x0ea58a,
+      emissive: 0x0b5e54,
+      emissiveIntensity: 0.55,
+      roughness: 0.12,
+      metalness: 0.14,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.06,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const lagoon = new THREE.Mesh(new THREE.CircleGeometry(195, 32), lagoonMat);
+    lagoon.rotation.x = -Math.PI / 2;
+    lagoon.scale.set(1.02, 1.18, 1);
+    lagoon.position.set(495, -6.8, 360);
+    env.add(lagoon);
+
+    const mossBank = new THREE.Mesh(
+      new THREE.RingGeometry(185, 224, 32),
+      new THREE.MeshStandardMaterial({ color: 0x165e52, emissive: 0x0a3b34, emissiveIntensity: 0.3, roughness: 0.85 }),
+    );
+    mossBank.rotation.x = -Math.PI / 2;
+    mossBank.scale.set(1.02, 1.18, 1);
+    mossBank.position.set(495, -6.95, 360);
+    env.add(mossBank);
+
+    const lilyPadGeo = new THREE.CylinderGeometry(12.5, 11.8, 0.8, 14);
+    const lotusGeo = new THREE.OctahedronGeometry(3.4, 0);
+    lotusGeo.scale(1.2, 0.75, 1.2);
+    const lilyMat = new THREE.MeshStandardMaterial({
+      color: 0x10b981,
+      emissive: 0x059669,
+      emissiveIntensity: 0.42,
+      roughness: 0.48,
+    });
+    const lotusMat = new THREE.MeshBasicMaterial({ color: 0xf472b6 });
+    const lilies: Array<{ x: number; z: number; s: number; rot: number }> = [];
+    for (let i = 0; i < 32 && lilies.length < 22; i++) {
+      const a = (i / 32) * Math.PI * 2 + rand() * 0.18;
+      const r = 38 + rand() * 145;
+      const lx = 495 + Math.cos(a) * r;
+      const lz = 360 + Math.sin(a) * r * 1.12;
+      const info = nearestTrackInfo(lx, lz);
+      if (info.dist < info.halfWidth + 16) continue;
+      lilies.push({ x: lx, z: lz, s: 0.65 + rand() * 1.1, rot: rand() * Math.PI * 2 });
+    }
+    if (lilies.length > 0) {
+      const lilyInst = new THREE.InstancedMesh(lilyPadGeo, lilyMat, lilies.length);
+      const lotusInst = new THREE.InstancedMesh(lotusGeo, lotusMat, lilies.length);
+      lilies.forEach((l, idx) => {
+        dummy.position.set(l.x, -6.2, l.z);
+        dummy.rotation.set(0, l.rot, 0);
+        dummy.scale.setScalar(l.s);
+        dummy.updateMatrix();
+        lilyInst.setMatrixAt(idx, dummy.matrix);
+
+        dummy.position.set(l.x, -4.6, l.z);
+        dummy.scale.setScalar(l.s * 0.9);
+        dummy.updateMatrix();
+        lotusInst.setMatrixAt(idx, dummy.matrix);
+      });
+      lilyInst.instanceMatrix.needsUpdate = true;
+      lotusInst.instanceMatrix.needsUpdate = true;
+      lilyInst.computeBoundingSphere();
+      lotusInst.computeBoundingSphere();
+      env.add(lilyInst, lotusInst);
+    }
+
+    // 3. Four Giant Floating Bioluminescent Sky-Jellyfish Leviathans hovering over the canopy!
+    const jellySpots = [
+      { t: 0.058, side: -1, off: 48, alt: 40, col: 0xf472b6, core: 0x34d399 }, // Framed in opening vista!
+      { t: 0.25, side: 1, off: 74, alt: 56, col: 0x2df9f2, core: 0xf472b6 },
+      { t: 0.56, side: -1, off: 78, alt: 52, col: 0xa78bfa, core: 0x34d399 },
+      { t: 0.85, side: 1, off: 68, alt: 48, col: 0x34d399, core: 0xfde047 },
+    ];
+    jellySpots.forEach((js, idx) => {
+      const f = sampleTrackFrame(track, js.t);
+      const jelly = new THREE.Group();
+      const bellMat = new THREE.MeshPhysicalMaterial({
+        color: js.col,
+        emissive: js.col,
+        emissiveIntensity: 0.85,
+        roughness: 0.16,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.78,
+        side: THREE.DoubleSide,
+      });
+      const bell = new THREE.Mesh(
+        new THREE.SphereGeometry(13.5, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.56),
+        bellMat,
+      );
+      bell.scale.set(1, 0.78, 1);
+      jelly.add(bell);
+
+      const coreGlow = new THREE.Mesh(
+        new THREE.SphereGeometry(5.2, 12, 10),
+        new THREE.MeshBasicMaterial({ color: js.core }),
+      );
+      coreGlow.position.y = 2.0;
+      jelly.add(coreGlow);
+
+      const rimRing = new THREE.Mesh(
+        new THREE.TorusGeometry(13.2, 0.62, 8, 24),
+        new THREE.MeshBasicMaterial({ color: js.core }),
+      );
+      rimRing.rotation.x = Math.PI / 2;
+      rimRing.position.y = 0.2;
+      jelly.add(rimRing);
+
+      // 6 luminous hanging tentacles
+      const tentGeo = new THREE.CylinderGeometry(0.42, 0.14, 24, 6);
+      const tentMat = new THREE.MeshBasicMaterial({ color: js.col, transparent: true, opacity: 0.72 });
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2;
+        const tent = new THREE.Mesh(tentGeo, tentMat);
+        tent.position.set(Math.cos(a) * 6.4, -11.5, Math.sin(a) * 6.4);
+        tent.rotation.z = Math.cos(a) * 0.12;
+        tent.rotation.x = Math.sin(a) * 0.12;
+        jelly.add(tent);
+      }
+
+      const jx = f.pos.x + f.right.x * (f.width * 0.5 + js.off) * js.side;
+      const jy = f.pos.y + js.alt;
+      const jz = f.pos.z + f.right.z * (f.width * 0.5 + js.off) * js.side;
+      jelly.position.set(jx, jy, jz);
+      env.add(jelly);
+      floatingProps.push({
+        mesh: jelly,
+        baseY: jy,
+        phase: idx * 1.7,
+        bobAmp: 3.4,
+        bobSpeed: 0.85 + idx * 0.12,
+        rotSpeed: 0.14 * (idx % 2 === 0 ? 1 : -1),
+      });
+    });
+
+    // 4. Three Ancient Overgrown Alien Monolith Shrines with Floating Rotating Emerald Obelisks!
+    const shrineStoneMat = new THREE.MeshStandardMaterial({
+      color: 0x16383d,
+      roughness: 0.78,
+      metalness: 0.18,
+      flatShading: true,
+    });
+    const shrineObeliskMat = new THREE.MeshStandardMaterial({
+      color: 0x34d399,
+      emissive: 0x10b981,
+      emissiveIntensity: 1.5,
+      roughness: 0.18,
+      metalness: 0.35,
+      flatShading: true,
+    });
+    const shrineRingMat = new THREE.MeshBasicMaterial({ color: 0xf472b6 });
+    const shrineSpots = [
+      { t: 0.056, side: 1, off: 44 }, // Visible right side on opening title vista!
+      { t: 0.56, side: 1, off: 56 },
+      { t: 0.86, side: -1, off: 52 },
+    ];
+    shrineSpots.forEach((spot, idx) => {
+      const f = sampleTrackFrame(track, spot.t);
+      const sx = f.pos.x + f.right.x * (f.width * 0.5 + spot.off) * spot.side;
+      const sz = f.pos.z + f.right.z * (f.width * 0.5 + spot.off) * spot.side;
+      const sy = Math.max(-10, f.pos.y - 16);
+
+      const shrine = new THREE.Group();
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(11, 16, 18, 6), shrineStoneMat);
+      base.position.y = 9;
+      shrine.add(base);
+
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(10.5, 0.65, 8, 24), shrineRingMat);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 18.5;
+      shrine.add(ring);
+
+      const obelisk = new THREE.Mesh(new THREE.OctahedronGeometry(7.2, 0), shrineObeliskMat);
+      obelisk.scale.set(0.68, 2.2, 0.68);
+      obelisk.position.y = 33;
+      shrine.add(obelisk);
+
+      floatingProps.push({
+        mesh: obelisk,
+        baseY: 33,
+        phase: idx * 2.1,
+        bobAmp: 2.2,
+        bobSpeed: 1.3,
+        rotSpeed: 0.65 * (idx % 2 === 0 ? 1 : -1),
+      });
+
+      shrine.position.set(sx, sy, sz);
+      env.add(shrine);
+    });
+
+    // 5. Floating bobbing bioluminescent firefly spore orbs framing the jungle canopy!
     const sporeGeo = new THREE.SphereGeometry(2.6, 12, 10);
-    for (let i = 0; i < 20; i++) {
-      const f = sampleTrackFrame(track, (i + 0.35) / 20);
+    for (let i = 0; i < 28; i++) {
+      const f = sampleTrackFrame(track, (i + 0.35) / 28);
       const side = i % 2 === 0 ? -1 : 1;
-      const off = f.width * 0.5 + 16 + rand() * 24;
-      const colHex = i % 3 === 0 ? 0x34d399 : i % 3 === 1 ? 0xf472b6 : 0x2df9f2;
+      const off = f.width * 0.5 + 16 + rand() * 26;
+      const colHex = i % 4 === 0 ? 0x34d399 : i % 4 === 1 ? 0xf472b6 : i % 4 === 2 ? 0x2df9f2 : 0xfde047;
       const sporeMat = new THREE.MeshBasicMaterial({
         color: colHex,
         transparent: true,
-        opacity: 0.78,
+        opacity: 0.82,
       });
       const spore = new THREE.Mesh(sporeGeo, sporeMat);
-      const baseY = f.pos.y + 10 + rand() * 18;
+      const baseY = f.pos.y + 10 + rand() * 20;
       spore.position.set(f.pos.x + f.right.x * off * side, baseY, f.pos.z + f.right.z * off * side);
       env.add(spore);
       floatingProps.push({
         mesh: spore,
         baseY,
         phase: i * 0.9,
-        bobAmp: 2.2,
+        bobAmp: 2.4,
         bobSpeed: 1.4 + (i % 3) * 0.3,
         rotSpeed: 0.4,
       });
@@ -3133,12 +3763,356 @@ export function buildCanyonEnvironment(
       arch.position.set(f.pos.x, f.pos.y, f.pos.z);
       env.add(arch);
     });
+  } else if (biome === 'nebula') {
+    // LEVEL 4 · NEBULA RIDGE: Deep-Space Cosmic Overpass Scenario!
+    // 1. Colossal Ringed Gas-Giant Planet + Twin Crescent Moons framed directly behind the 64m Figure-8 Overpass!
+    const planetCanvas = document.createElement('canvas');
+    planetCanvas.width = 512;
+    planetCanvas.height = 256;
+    const pCtx = planetCanvas.getContext('2d')!;
+    const pGrad = pCtx.createLinearGradient(0, 0, 0, 256);
+    pGrad.addColorStop(0.0, '#1e1b4b');
+    pGrad.addColorStop(0.18, '#581c87');
+    pGrad.addColorStop(0.36, '#c026d3');
+    pGrad.addColorStop(0.5, '#f59e0b');
+    pGrad.addColorStop(0.64, '#a21caf');
+    pGrad.addColorStop(0.82, '#3b0764');
+    pGrad.addColorStop(1.0, '#0f172a');
+    pCtx.fillStyle = pGrad;
+    pCtx.fillRect(0, 0, 512, 256);
+    // Atmospheric cloud storm bands
+    for (let b = 0; b < 14; b++) {
+      pCtx.fillStyle =
+        b % 3 === 0
+          ? 'rgba(253, 224, 71, 0.22)'
+          : b % 3 === 1
+          ? 'rgba(56, 189, 248, 0.24)'
+          : 'rgba(244, 114, 182, 0.22)';
+      pCtx.fillRect(0, 14 + b * 17, 512, 5 + (b % 3) * 3);
+    }
+    const planetTex = new THREE.CanvasTexture(planetCanvas);
+    planetTex.colorSpace = THREE.SRGBColorSpace;
+    planetTex.anisotropy = maxAnisotropy;
+
+    const planetGroup = new THREE.Group();
+    planetGroup.position.set(115, 205, -860);
+    const gasGiant = new THREE.Mesh(
+      new THREE.SphereGeometry(142, 32, 24),
+      new THREE.MeshBasicMaterial({ map: planetTex, fog: false }),
+    );
+    planetGroup.add(gasGiant);
+
+    // Translucent layered golden-violet planetary ring system
+    const ringCanvas = document.createElement('canvas');
+    ringCanvas.width = 256;
+    ringCanvas.height = 32;
+    const rCtx = ringCanvas.getContext('2d')!;
+    const rGrad = rCtx.createLinearGradient(0, 0, 256, 0);
+    rGrad.addColorStop(0.0, 'rgba(192, 132, 252, 0.0)');
+    rGrad.addColorStop(0.18, 'rgba(232, 121, 249, 0.62)');
+    rGrad.addColorStop(0.42, 'rgba(253, 224, 71, 0.78)');
+    rGrad.addColorStop(0.56, 'rgba(56, 189, 248, 0.28)');
+    rGrad.addColorStop(0.76, 'rgba(192, 132, 252, 0.68)');
+    rGrad.addColorStop(1.0, 'rgba(168, 85, 247, 0.0)');
+    rCtx.fillStyle = rGrad;
+    rCtx.fillRect(0, 0, 256, 32);
+    const ringTex = new THREE.CanvasTexture(ringCanvas);
+    ringTex.colorSpace = THREE.SRGBColorSpace;
+
+    const planetRing = new THREE.Mesh(
+      new THREE.RingGeometry(182, 310, 64),
+      new THREE.MeshBasicMaterial({
+        map: ringTex,
+        transparent: true,
+        opacity: 0.78,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        fog: false,
+      }),
+    );
+    planetRing.rotation.x = Math.PI * 0.42;
+    planetRing.rotation.y = 0.26;
+    planetGroup.add(planetRing);
+
+    // Twin Crescent Moons flanking the Gas Giant
+    const moonA = new THREE.Mesh(
+      new THREE.SphereGeometry(28, 18, 14),
+      new THREE.MeshBasicMaterial({ color: 0xbae6fd, fog: false }),
+    );
+    moonA.position.set(-245, 72, 65);
+    planetGroup.add(moonA);
+
+    const moonB = new THREE.Mesh(
+      new THREE.SphereGeometry(18, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xfde68a, fog: false }),
+    );
+    moonB.position.set(220, -45, 110);
+    planetGroup.add(moonB);
+    env.add(planetGroup);
+
+    // 2. 3 Sweeping Iridescent Nebula Cloud Ribbons arching high across the cosmic sky dome
+    const nebCanvas = document.createElement('canvas');
+    nebCanvas.width = 512;
+    nebCanvas.height = 128;
+    const nCtx = nebCanvas.getContext('2d')!;
+    const nGrad = nCtx.createLinearGradient(0, 0, 0, 128);
+    nGrad.addColorStop(0.0, 'rgba(168, 85, 247, 0.0)');
+    nGrad.addColorStop(0.32, 'rgba(232, 121, 249, 0.42)');
+    nGrad.addColorStop(0.54, 'rgba(56, 189, 248, 0.46)');
+    nGrad.addColorStop(0.76, 'rgba(244, 114, 182, 0.34)');
+    nGrad.addColorStop(1.0, 'rgba(15, 23, 42, 0.0)');
+    nCtx.fillStyle = nGrad;
+    nCtx.fillRect(0, 0, 512, 128);
+    const nebTex = new THREE.CanvasTexture(nebCanvas);
+    nebTex.colorSpace = THREE.SRGBColorSpace;
+    nebTex.wrapS = THREE.RepeatWrapping;
+    nebTex.repeat.set(3, 1);
+
+    const ribbonConfigs = [
+      { radius: 960, height: 220, y: 270, tiltX: 0.14, tiltZ: -0.18, opacity: 0.56 },
+      { radius: 1080, height: 190, y: 340, tiltX: -0.11, tiltZ: 0.22, opacity: 0.44 },
+      { radius: 860, height: 160, y: 215, tiltX: 0.08, tiltZ: 0.12, opacity: 0.38 },
+    ];
+    for (const rc of ribbonConfigs) {
+      const band = new THREE.Mesh(
+        new THREE.CylinderGeometry(rc.radius, rc.radius, rc.height, 44, 1, true),
+        new THREE.MeshBasicMaterial({
+          map: nebTex,
+          transparent: true,
+          opacity: rc.opacity,
+          blending: THREE.AdditiveBlending,
+          side: THREE.BackSide,
+          depthWrite: false,
+          fog: false,
+        }),
+      );
+      band.position.y = rc.y;
+      band.rotation.set(rc.tiltX, 0, rc.tiltZ);
+      env.add(band);
+    }
+
+    // 3. Twinkling 3D Cosmic Starfield Halo (180 crisp stars overhead, fog: false)
+    const starGeo = new THREE.OctahedronGeometry(2.4, 0);
+    const starMat = new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false });
+    const starCount = 180;
+    const starInst = new THREE.InstancedMesh(starGeo, starMat, starCount);
+    const starPalette = [
+      new THREE.Color(0xffffff),
+      new THREE.Color(0xbae6fd),
+      new THREE.Color(0xfde68a),
+      new THREE.Color(0xf5d0fe),
+    ];
+    for (let i = 0; i < starCount; i++) {
+      const theta = rand() * Math.PI * 2;
+      const elev = 0.22 + rand() * 0.92;
+      const dist = 780 + rand() * 440;
+      dummy.position.set(
+        Math.cos(theta) * Math.cos(elev) * dist,
+        140 + Math.sin(elev) * dist * 0.65,
+        Math.sin(theta) * Math.cos(elev) * dist,
+      );
+      dummy.rotation.set(rand() * Math.PI, rand() * Math.PI, 0);
+      dummy.scale.setScalar(0.55 + rand() * 1.4);
+      dummy.updateMatrix();
+      starInst.setMatrixAt(i, dummy.matrix);
+      starInst.setColorAt(i, starPalette[i % starPalette.length]);
+    }
+    starInst.instanceMatrix.needsUpdate = true;
+    if (starInst.instanceColor) starInst.instanceColor.needsUpdate = true;
+    starInst.computeBoundingSphere();
+    env.add(starInst);
+
+    // 4. 110 Multi-Faceted Floating Asteroid Islands (dark basalt-amethyst crags + glowing violet crystal undersides!)
+    const astRockGeo = new THREE.DodecahedronGeometry(11.5, 0);
+    const astRockMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.72,
+      metalness: 0.22,
+      flatShading: true,
+    });
+    const astCrystalGeo = new THREE.ConeGeometry(4.4, 14.5, 5);
+    astCrystalGeo.rotateX(Math.PI);
+    astCrystalGeo.translate(0, -10.5, 0);
+    const astCrystalMat = new THREE.MeshStandardMaterial({
+      color: 0xd8b4fe,
+      emissive: 0x9333ea,
+      emissiveIntensity: 0.95,
+      roughness: 0.22,
+      metalness: 0.55,
+      flatShading: true,
+    });
+
+    const astTransforms: Array<{
+      x: number;
+      y: number;
+      z: number;
+      sx: number;
+      sy: number;
+      sz: number;
+      rx: number;
+      ry: number;
+      tint: THREE.Color;
+    }> = [];
+    const astBase = new THREE.Color('#3b2247');
+    const astAccent = new THREE.Color('#5b2e68');
+    const astSlate = new THREE.Color('#271c3d');
+
+    for (let attempt = 0; attempt < 560 && astTransforms.length < 110; attempt++) {
+      const angle = rand() * Math.PI * 2;
+      const radius = 85 + rand() * 820;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      // Keep the iconic Title Screen launch straight & 64m Figure-8 Overpass corridor completely clear!
+      if (Math.abs(x) < 175 && z > -385 && z < 165) continue;
+      const { dist, halfWidth } = nearestTrackInfo(x, z);
+      if (dist < halfWidth + 36) continue;
+
+      const sx = 0.85 + rand() * 2.1;
+      const sy = 0.65 + rand() * 1.45;
+      const sz = 0.85 + rand() * 2.1;
+      const y = 8 + rand() * 98;
+      const tint = astBase.clone().lerp(rand() > 0.5 ? astAccent : astSlate, rand() * 0.85);
+      astTransforms.push({
+        x,
+        y,
+        z,
+        sx,
+        sy,
+        sz,
+        rx: (rand() - 0.5) * 0.45,
+        ry: rand() * Math.PI * 2,
+        tint,
+      });
+    }
+
+    const astRockInst = new THREE.InstancedMesh(astRockGeo, astRockMat, astTransforms.length);
+    const astCrystalInst = new THREE.InstancedMesh(astCrystalGeo, astCrystalMat, astTransforms.length);
+    astTransforms.forEach((at, idx) => {
+      dummy.position.set(at.x, at.y, at.z);
+      dummy.rotation.set(at.rx, at.ry, 0);
+      dummy.scale.set(at.sx, at.sy, at.sz);
+      dummy.updateMatrix();
+      astRockInst.setMatrixAt(idx, dummy.matrix);
+      astRockInst.setColorAt(idx, at.tint);
+      astCrystalInst.setMatrixAt(idx, dummy.matrix);
+    });
+    astRockInst.instanceMatrix.needsUpdate = true;
+    if (astRockInst.instanceColor) astRockInst.instanceColor.needsUpdate = true;
+    astRockInst.computeBoundingSphere();
+    astCrystalInst.instanceMatrix.needsUpdate = true;
+    astCrystalInst.computeBoundingSphere();
+    env.add(astRockInst, astCrystalInst);
+
+    // 5. 4 Deep-Space Observatory / Solar-Array Relay Satellites hovering beside major zones!
+    const satHullMat = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      roughness: 0.28,
+      metalness: 0.78,
+    });
+    const satSolarMat = new THREE.MeshStandardMaterial({
+      color: 0xfbbf24,
+      emissive: 0xd97706,
+      emissiveIntensity: 0.55,
+      roughness: 0.22,
+      metalness: 0.85,
+    });
+    const satBeaconMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+    const satSpots = [
+      { t: 0.20, side: 1, off: 64, elev: 44 },
+      { t: 0.36, side: -1, off: 62, elev: 48 },
+      { t: 0.60, side: 1, off: 66, elev: 42 },
+      { t: 0.83, side: -1, off: 68, elev: 38 },
+    ];
+    satSpots.forEach((sp, idx) => {
+      const f = sampleTrackFrame(track, sp.t);
+      const sat = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 5.2, 12.5, 10), satHullMat);
+      sat.add(body);
+      const dish = new THREE.Mesh(
+        new THREE.ConeGeometry(6.8, 3.2, 14, 1, true),
+        satHullMat,
+      );
+      dish.rotation.x = Math.PI * 0.72;
+      dish.position.set(0, 7.5, 2.2);
+      sat.add(dish);
+      const wingGeo = new THREE.BoxGeometry(26, 0.5, 6.2);
+      const wingL = new THREE.Mesh(wingGeo, satSolarMat);
+      wingL.position.set(-16.5, 0, 0);
+      const wingR = new THREE.Mesh(wingGeo, satSolarMat);
+      wingR.position.set(16.5, 0, 0);
+      sat.add(wingL, wingR);
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(1.8, 10, 8), satBeaconMat);
+      beacon.position.y = -7.8;
+      sat.add(beacon);
+
+      const baseY = f.pos.y + sp.elev;
+      sat.position.set(
+        f.pos.x + f.right.x * (f.width * 0.5 + sp.off) * sp.side,
+        baseY,
+        f.pos.z + f.right.z * (f.width * 0.5 + sp.off) * sp.side,
+      );
+      env.add(sat);
+      floatingProps.push({
+        mesh: sat,
+        baseY,
+        phase: idx * 1.6,
+        bobAmp: 3.4,
+        bobSpeed: 0.8 + idx * 0.15,
+        rotSpeed: 0.28 * (idx % 2 === 0 ? 1 : -1),
+      });
+    });
+
+    // 6. 24 Floating Luminous Star-Dust Crystal Shards lining the cosmic highway
+    const shardGeo = new THREE.OctahedronGeometry(5.6, 0);
+    const shardRingGeo = new THREE.TorusGeometry(7.8, 0.34, 8, 22);
+    for (let i = 0; i < 24; i++) {
+      const t = (i + 0.35) / 24;
+      const f = sampleTrackFrame(track, t);
+      const side = i % 2 === 0 ? -1 : 1;
+      const off = f.width * 0.5 + 24 + (i % 4) * 12;
+      const shardGroup = new THREE.Group();
+      const sCol = i % 3 === 0 ? 0xe879f9 : i % 3 === 1 ? 0x38bdf8 : 0xfbbf24;
+      const core = new THREE.Mesh(
+        shardGeo,
+        new THREE.MeshStandardMaterial({
+          color: sCol,
+          emissive: sCol,
+          emissiveIntensity: 0.85,
+          roughness: 0.2,
+          metalness: 0.72,
+          flatShading: true,
+        }),
+      );
+      core.scale.set(0.85, 1.65, 0.85);
+      shardGroup.add(core);
+      if (i % 3 === 0) {
+        const halo = new THREE.Mesh(
+          shardRingGeo,
+          new THREE.MeshBasicMaterial({ color: 0xfde047, transparent: true, opacity: 0.75 }),
+        );
+        halo.rotation.x = Math.PI / 3;
+        shardGroup.add(halo);
+      }
+      const baseY = f.pos.y + 12 + (i % 5) * 6.5;
+      shardGroup.position.set(
+        f.pos.x + f.right.x * off * side,
+        baseY,
+        f.pos.z + f.right.z * off * side,
+      );
+      env.add(shardGroup);
+      floatingProps.push({
+        mesh: shardGroup,
+        baseY,
+        phase: i * 0.9,
+        bobAmp: 2.6,
+        bobSpeed: 1.05 + (i % 3) * 0.22,
+        rotSpeed: 0.6 * (i % 2 === 0 ? 1 : -1),
+      });
+    }
   } else {
-    // Classic + Quantum sculpted instanced monoliths / crystal spires / basalt peaks / sky pillars
+    // Classic + Quantum sculpted instanced monoliths / basalt peaks / sky pillars
     const spireGeo =
-      biome === 'glacier'
-        ? new THREE.ConeGeometry(8.5, 58, 6)
-        : biome === 'volcano'
+      biome === 'volcano'
         ? new THREE.CylinderGeometry(2.4, 11.5, 58, 6)
         : biome === 'aether'
         ? new THREE.CylinderGeometry(3.8, 5.2, 80, 8)
@@ -3151,16 +4125,11 @@ export function buildCanyonEnvironment(
 
     const spireMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: biome === 'glacier' || biome === 'quantum' ? 0.22 : biome === 'aether' ? 0.36 : 0.86,
-      metalness: biome === 'quantum' ? 0.65 : biome === 'glacier' ? 0.28 : biome === 'aether' ? 0.52 : 0.08,
+      roughness: biome === 'quantum' ? 0.22 : biome === 'aether' ? 0.36 : 0.86,
+      metalness: biome === 'quantum' ? 0.65 : biome === 'aether' ? 0.52 : 0.08,
       flatShading: biome !== 'aether',
-      emissive:
-        biome === 'glacier'
-          ? new THREE.Color(0x0d4f78)
-          : biome === 'quantum'
-          ? new THREE.Color(0x4c1d95)
-          : new THREE.Color(0x000000),
-      emissiveIntensity: biome === 'quantum' ? 0.45 : biome === 'glacier' ? 0.22 : 0,
+      emissive: biome === 'quantum' ? new THREE.Color(0x4c1d95) : new THREE.Color(0x000000),
+      emissiveIntensity: biome === 'quantum' ? 0.45 : 0,
     });
 
     const spireTransforms: Array<{
@@ -3175,9 +4144,7 @@ export function buildCanyonEnvironment(
     }> = [];
 
     const baseRock = new THREE.Color(
-      biome === 'glacier'
-        ? '#b8e8ff'
-        : biome === 'volcano'
+      biome === 'volcano'
         ? '#2d2026'
         : biome === 'aether'
         ? '#dce8f8'
@@ -3186,9 +4153,7 @@ export function buildCanyonEnvironment(
         : track.def.terrainPrimary,
     );
     const accentRock = new THREE.Color(
-      biome === 'glacier'
-        ? '#38bdf8'
-        : biome === 'volcano'
+      biome === 'volcano'
         ? '#5c261c'
         : biome === 'aether'
         ? '#fcd34d'
@@ -3197,9 +4162,7 @@ export function buildCanyonEnvironment(
         : track.def.terrainAccent,
     );
     const sunlitRock = new THREE.Color(
-      biome === 'glacier'
-        ? '#f0f9ff'
-        : biome === 'volcano'
+      biome === 'volcano'
         ? '#ff6b2b'
         : biome === 'aether'
         ? '#ffffff'
@@ -3249,11 +4212,11 @@ export function buildCanyonEnvironment(
     spireInst.computeBoundingSphere();
     env.add(spireInst);
 
-    // Colossal floating rotating Quantum Prism crystals or Nebula Asteroid shards!
-    if (biome === 'quantum' || biome === 'nebula') {
+    // Colossal floating rotating Quantum Prism crystals
+    if (biome === 'quantum') {
       const crystalGeo = new THREE.OctahedronGeometry(7.5, 0);
       const ringGeo = new THREE.TorusGeometry(10.5, 0.48, 8, 24);
-      const count = biome === 'quantum' ? 16 : 12;
+      const count = 16;
       for (let i = 0; i < count; i++) {
         const f = sampleTrackFrame(track, (i + 0.5) / count);
         const side = i % 2 === 0 ? -1 : 1;
@@ -3262,8 +4225,8 @@ export function buildCanyonEnvironment(
         const core = new THREE.Mesh(
           crystalGeo,
           new THREE.MeshStandardMaterial({
-            color: biome === 'quantum' ? (i % 2 === 0 ? 0xfbbf24 : 0x2df9f2) : 0x7c3aed,
-            emissive: biome === 'quantum' ? (i % 2 === 0 ? 0xd97706 : 0x06b6d4) : 0x4c1d95,
+            color: i % 2 === 0 ? 0xfbbf24 : 0x2df9f2,
+            emissive: i % 2 === 0 ? 0xd97706 : 0x06b6d4,
             emissiveIntensity: 0.72,
             roughness: 0.2,
             metalness: 0.75,
@@ -3272,14 +4235,12 @@ export function buildCanyonEnvironment(
         );
         core.scale.set(1, 1.5, 1);
         cluster.add(core);
-        if (biome === 'quantum') {
-          const halo = new THREE.Mesh(
-            ringGeo,
-            new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? 0xc084fc : 0xfbbf24 }),
-          );
-          halo.rotation.x = Math.PI / 3;
-          cluster.add(halo);
-        }
+        const halo = new THREE.Mesh(
+          ringGeo,
+          new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? 0xc084fc : 0xfbbf24 }),
+        );
+        halo.rotation.x = Math.PI / 3;
+        cluster.add(halo);
         const baseY = f.pos.y + 14 + rand() * 24;
         cluster.position.set(f.pos.x + f.right.x * off * side, baseY, f.pos.z + f.right.z * off * side);
         env.add(cluster);
@@ -3302,7 +4263,7 @@ export function buildCanyonEnvironment(
         ? [0.16, 0.42, 0.66, 0.88]
         : biome === 'aether'
         ? [0.16, 0.48, 0.78]
-        : [0.22, 0.64];
+        : [0.13, 0.455, 0.78];
     const outerRingMat = new THREE.MeshStandardMaterial({
       color: biome === 'aether' || biome === 'quantum' ? 0xfbbf24 : 0xc084fc,
       emissive: biome === 'aether' || biome === 'quantum' ? 0xd97706 : 0x7e22ce,
@@ -3357,7 +4318,14 @@ export function buildCanyonEnvironment(
       env.add(gateRoot);
     }
   } else if (biome !== 'cybercity') {
-    const archTs = biome === 'canyon' ? [0.068, 0.395, 0.675, 0.875] : [0.16, 0.62];
+    const archTs =
+      biome === 'canyon'
+        ? [0.068, 0.395, 0.675, 0.875]
+        : biome === 'glacier'
+        ? [0.072, 0.365, 0.635, 0.870]
+        : biome === 'biolume'
+        ? [0.068, 0.365, 0.625, 0.875]
+        : [0.16, 0.62];
     const archMat = new THREE.MeshStandardMaterial({
       color:
         biome === 'glacier'
@@ -3367,8 +4335,8 @@ export function buildCanyonEnvironment(
           : biome === 'volcano'
           ? 0x2b1d22
           : track.def.terrainPrimary,
-      roughness: biome === 'glacier' ? 0.25 : 0.84,
-      metalness: biome === 'glacier' ? 0.28 : 0.08,
+      roughness: biome === 'glacier' ? 0.2 : 0.84,
+      metalness: biome === 'glacier' ? 0.32 : 0.08,
       flatShading: true,
     });
     const rimMat =
@@ -3376,6 +4344,8 @@ export function buildCanyonEnvironment(
         ? new THREE.MeshBasicMaterial({ color: 0xff6b2b })
         : biome === 'biolume'
         ? new THREE.MeshBasicMaterial({ color: 0x34d399 })
+        : biome === 'glacier'
+        ? new THREE.MeshBasicMaterial({ color: 0x7efcf7 })
         : biome === 'canyon'
         ? new THREE.MeshBasicMaterial({ color: 0xffd166 })
         : null;
@@ -4152,8 +5122,420 @@ export function buildTrackObstacles(
       collar.position.y = 1.9;
       oGroup.add(collar);
       pulsePart = collar;
+    } else if (ob.kind === 'ice-spire') {
+      // Composite 5-part Sculpted Glacial Ice Spire divider with translucent crystal shards & cyan collar!
+      const iceBodyMat = new THREE.MeshPhysicalMaterial({
+        color: 0x9be7ff,
+        emissive: 0x0ea5e9,
+        emissiveIntensity: 0.38,
+        roughness: 0.14,
+        metalness: 0.18,
+        clearcoat: 1.0,
+        flatShading: true,
+      });
+      const iceTipMat = new THREE.MeshStandardMaterial({
+        color: 0xe6faff,
+        emissive: 0x38bdf8,
+        emissiveIntensity: 0.55,
+        roughness: 0.12,
+        metalness: 0.22,
+        flatShading: true,
+      });
+
+      const basePlinth = new THREE.Mesh(
+        new THREE.CylinderGeometry(ob.radius * 0.9, ob.radius * 1.12, 2.2, 6),
+        iceBodyMat,
+      );
+      basePlinth.position.y = 1.1;
+      oGroup.add(basePlinth);
+
+      const mainSpire = new THREE.Mesh(
+        new THREE.ConeGeometry(ob.radius * 0.88, ob.height * 0.94, 6),
+        iceTipMat,
+      );
+      mainSpire.position.y = 1.8 + ob.height * 0.47;
+      oGroup.add(mainSpire);
+
+      // Twin angled flanking crystal shards for an unmistakable glacial silhouette
+      for (const s of [-1, 1]) {
+        const sideShard = new THREE.Mesh(
+          new THREE.ConeGeometry(ob.radius * 0.44, ob.height * 0.52, 5),
+          iceBodyMat,
+        );
+        sideShard.position.set(s * ob.radius * 0.58, ob.height * 0.28, s * 0.35);
+        sideShard.rotation.z = -s * 0.28;
+        oGroup.add(sideShard);
+      }
+
+      const iceCollar = new THREE.Mesh(
+        new THREE.TorusGeometry(ob.radius * 1.04, 0.24, 8, 20),
+        cyanGlowMat,
+      );
+      iceCollar.rotation.x = Math.PI / 2;
+      iceCollar.position.y = 1.9;
+      oGroup.add(iceCollar);
+      pulsePart = iceCollar;
+    } else if (ob.kind === 'frost-crystal') {
+      // Unique Level 2 Fun Element: Shatterable Cryo-Crystal Prism (smash for +140 pts, +22% boost & surge!)
+      const cCol = ob.colorHex ?? 0x7efcf7;
+      const prismMat = new THREE.MeshPhysicalMaterial({
+        color: cCol,
+        emissive: cCol,
+        emissiveIntensity: 0.85,
+        roughness: 0.08,
+        metalness: 0.2,
+        clearcoat: 1.0,
+        transparent: true,
+        opacity: 0.88,
+        flatShading: true,
+      });
+      const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+      const crystalSpin = new THREE.Group();
+      crystalSpin.position.y = 2.15;
+
+      const mainPrism = new THREE.Mesh(new THREE.OctahedronGeometry(ob.radius * 0.72, 0), prismMat);
+      mainPrism.scale.set(0.76, 1.55, 0.76);
+      crystalSpin.add(mainPrism);
+
+      const crossPrism = new THREE.Mesh(new THREE.OctahedronGeometry(ob.radius * 0.52, 0), prismMat);
+      crossPrism.rotation.set(0.45, 0.65, 0.55);
+      crossPrism.scale.set(0.85, 1.35, 0.85);
+      crystalSpin.add(crossPrism);
+
+      const innerCore = new THREE.Mesh(new THREE.OctahedronGeometry(ob.radius * 0.34, 0), coreMat);
+      crystalSpin.add(innerCore);
+
+      oGroup.add(crystalSpin);
+      spinPart = crystalSpin;
+      pulsePart = crystalSpin;
+
+      // Inviting radiant frost ground target halo so players spot smashable crystals instantly!
+      const frostHalo = new THREE.Mesh(
+        new THREE.RingGeometry(ob.radius * 0.62, ob.radius * 1.08, 18),
+        new THREE.MeshBasicMaterial({
+          color: cCol,
+          transparent: true,
+          opacity: 0.62,
+          side: THREE.DoubleSide,
+        }),
+      );
+      frostHalo.rotation.x = -Math.PI / 2;
+      frostHalo.position.y = 0.08;
+      oGroup.add(frostHalo);
+    } else if (ob.kind === 'spore-stalk') {
+      // Composite 5-part Bioluminescent Fungal Stalk Divider with glowing tiered cap & emerald collar!
+      const stalkBodyMat = new THREE.MeshStandardMaterial({
+        color: 0x165e56,
+        emissive: 0x064e3b,
+        emissiveIntensity: 0.35,
+        roughness: 0.62,
+        flatShading: true,
+      });
+      const capGlowMat = new THREE.MeshStandardMaterial({
+        color: 0x34d399,
+        emissive: 0x10b981,
+        emissiveIntensity: 1.15,
+        roughness: 0.25,
+      });
+      const pinkRimMat = new THREE.MeshBasicMaterial({ color: 0xf472b6 });
+
+      const baseRoot = new THREE.Mesh(
+        new THREE.CylinderGeometry(ob.radius * 0.78, ob.radius * 1.12, 2.6, 8),
+        stalkBodyMat,
+      );
+      baseRoot.position.y = 1.3;
+      oGroup.add(baseRoot);
+
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(ob.radius * 0.54, ob.radius * 0.78, ob.height * 0.72, 8),
+        stalkBodyMat,
+      );
+      trunk.position.y = 2.2 + ob.height * 0.36;
+      oGroup.add(trunk);
+
+      const topCap = new THREE.Mesh(
+        new THREE.SphereGeometry(ob.radius * 1.45, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.52),
+        capGlowMat,
+      );
+      topCap.scale.set(1, 0.56, 1);
+      topCap.position.y = ob.height * 0.86;
+      oGroup.add(topCap);
+
+      const hoverCollar = new THREE.Mesh(
+        new THREE.TorusGeometry(ob.radius * 1.04, 0.24, 8, 20),
+        pinkRimMat,
+      );
+      hoverCollar.rotation.x = Math.PI / 2;
+      hoverCollar.position.y = 1.9;
+      oGroup.add(hoverCollar);
+      pulsePart = hoverCollar;
+    } else if (ob.kind === 'spore-pad') {
+      // Unique Level 3 Fun Element: Bouncy Giant Toadstool Spring-Pad (catapults UFO into canopy!)
+      const pCol = ob.colorHex ?? 0xf472b6;
+      const capMat = new THREE.MeshPhysicalMaterial({
+        color: pCol,
+        emissive: pCol,
+        emissiveIntensity: 0.78,
+        roughness: 0.22,
+        metalness: 0.1,
+        clearcoat: 0.9,
+      });
+      const stemMat = new THREE.MeshStandardMaterial({
+        color: 0xd1fae5,
+        emissive: 0x10b981,
+        emissiveIntensity: 0.4,
+        roughness: 0.5,
+      });
+      const spotMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+
+      const springBody = new THREE.Group();
+      const stem = new THREE.Mesh(
+        new THREE.CylinderGeometry(ob.radius * 0.52, ob.radius * 0.72, 1.0, 14),
+        stemMat,
+      );
+      stem.position.y = 0.5;
+      springBody.add(stem);
+
+      const cap = new THREE.Mesh(
+        new THREE.SphereGeometry(ob.radius * 1.06, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.5),
+        capMat,
+      );
+      cap.scale.set(1, 0.44, 1);
+      cap.position.y = 0.95;
+      springBody.add(cap);
+
+      // Luminous golden biolume spots ringing the bouncy toadstool cap
+      const spotGeo = new THREE.SphereGeometry(0.36, 8, 8);
+      for (let s = 0; s < 6; s++) {
+        const a = (s / 6) * Math.PI * 2;
+        const spot = new THREE.Mesh(spotGeo, spotMat);
+        spot.position.set(Math.cos(a) * ob.radius * 0.65, 1.72, Math.sin(a) * ob.radius * 0.65);
+        springBody.add(spot);
+      }
+
+      oGroup.add(springBody);
+      pulsePart = springBody;
+
+      const springHalo = new THREE.Mesh(
+        new THREE.RingGeometry(ob.radius * 0.96, ob.radius * 1.24, 22),
+        new THREE.MeshBasicMaterial({
+          color: pCol,
+          transparent: true,
+          opacity: 0.65,
+          side: THREE.DoubleSide,
+        }),
+      );
+      springHalo.rotation.x = -Math.PI / 2;
+      springHalo.position.y = 0.08;
+      oGroup.add(springHalo);
+    } else if (ob.kind === 'pollen-orb') {
+      // Unique Level 3 Fun Element: Floating Biolume Pollen Bloom (burst for +130 pts & +25% boost!)
+      const bCol = ob.colorHex ?? 0xfde047;
+      const bloomMat = new THREE.MeshStandardMaterial({
+        color: bCol,
+        emissive: bCol,
+        emissiveIntensity: 1.35,
+        roughness: 0.18,
+      });
+      const petalMat = new THREE.MeshBasicMaterial({
+        color: 0x34d399,
+        transparent: true,
+        opacity: 0.78,
+      });
+
+      const bloomGroup = new THREE.Group();
+      bloomGroup.position.y = 2.2;
+
+      const core = new THREE.Mesh(new THREE.IcosahedronGeometry(ob.radius * 0.56, 1), bloomMat);
+      bloomGroup.add(core);
+
+      // 4 orbiting pollen satellites
+      const satGeo = new THREE.SphereGeometry(0.42, 8, 8);
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI * 2;
+        const sat = new THREE.Mesh(satGeo, petalMat);
+        sat.position.set(Math.cos(a) * ob.radius * 0.88, Math.sin(a * 2) * 0.45, Math.sin(a) * ob.radius * 0.88);
+        bloomGroup.add(sat);
+      }
+
+      oGroup.add(bloomGroup);
+      spinPart = bloomGroup;
+      pulsePart = bloomGroup;
+
+      const bloomRing = new THREE.Mesh(
+        new THREE.RingGeometry(ob.radius * 0.58, ob.radius * 1.02, 18),
+        new THREE.MeshBasicMaterial({
+          color: bCol,
+          transparent: true,
+          opacity: 0.58,
+          side: THREE.DoubleSide,
+        }),
+      );
+      bloomRing.rotation.x = -Math.PI / 2;
+      bloomRing.position.y = 0.08;
+      oGroup.add(bloomRing);
+    } else if (ob.kind === 'meteor-spire') {
+      // Unique Level 4 Split-Pillar: Obsidian-Amethyst Faceted Meteor Spire with orbiting glowing cosmic ring collar!
+      const mCol = ob.colorHex ?? 0xa855f7;
+      const obsidianMat = new THREE.MeshStandardMaterial({
+        color: 0x26163a,
+        emissive: 0x3b0764,
+        emissiveIntensity: 0.35,
+        roughness: 0.48,
+        metalness: 0.52,
+        flatShading: true,
+      });
+      const veinMat = new THREE.MeshStandardMaterial({
+        color: mCol,
+        emissive: mCol,
+        emissiveIntensity: 1.45,
+        roughness: 0.2,
+      });
+
+      const baseCrater = new THREE.Mesh(
+        new THREE.CylinderGeometry(ob.radius * 0.96, ob.radius * 1.18, 1.3, 8),
+        obsidianMat,
+      );
+      baseCrater.position.y = 0.65;
+      oGroup.add(baseCrater);
+
+      const mainSpire = new THREE.Mesh(
+        new THREE.CylinderGeometry(ob.radius * 0.34, ob.radius * 0.88, ob.height * 0.86, 6),
+        obsidianMat,
+      );
+      mainSpire.position.y = ob.height * 0.45;
+      mainSpire.castShadow = !isSoftwareGl;
+      oGroup.add(mainSpire);
+
+      const capCrystal = new THREE.Mesh(
+        new THREE.ConeGeometry(ob.radius * 0.46, ob.height * 0.22, 6),
+        veinMat,
+      );
+      capCrystal.position.y = ob.height * 0.96;
+      oGroup.add(capCrystal);
+
+      const orbitCollar = new THREE.Group();
+      orbitCollar.position.y = 3.2;
+      const ringA = new THREE.Mesh(
+        new THREE.TorusGeometry(ob.radius * 1.15, 0.22, 8, 24),
+        veinMat,
+      );
+      ringA.rotation.x = Math.PI / 2 + 0.22;
+      orbitCollar.add(ringA);
+      const ringB = new THREE.Mesh(
+        new THREE.TorusGeometry(ob.radius * 1.32, 0.14, 8, 22),
+        cyanGlowMat,
+      );
+      ringB.rotation.x = Math.PI / 2 - 0.2;
+      orbitCollar.add(ringB);
+      oGroup.add(orbitCollar);
+      spinPart = orbitCollar;
+      pulsePart = ringA;
+    } else if (ob.kind === 'gravity-well') {
+      // Unique Level 4 Fun Element: Spinning Cosmic Gravity Pulse Well (orbital slingshot +14 m/s, +26% boost, +175 PTS!)
+      const gCol = ob.colorHex ?? 0xf59e0b;
+      const coreMat = new THREE.MeshStandardMaterial({
+        color: 0x09051a,
+        emissive: 0x4c1d95,
+        emissiveIntensity: 0.9,
+        roughness: 0.12,
+        metalness: 0.9,
+      });
+      const accMat = new THREE.MeshStandardMaterial({
+        color: gCol,
+        emissive: gCol,
+        emissiveIntensity: 1.75,
+        roughness: 0.15,
+      });
+
+      const wellGroup = new THREE.Group();
+      wellGroup.position.y = 2.15;
+
+      const singularity = new THREE.Mesh(new THREE.SphereGeometry(ob.radius * 0.46, 16, 14), coreMat);
+      wellGroup.add(singularity);
+
+      const accRingA = new THREE.Mesh(
+        new THREE.TorusGeometry(ob.radius * 0.95, 0.22, 8, 28),
+        accMat,
+      );
+      accRingA.rotation.x = Math.PI * 0.38;
+      wellGroup.add(accRingA);
+
+      const accRingB = new THREE.Mesh(
+        new THREE.TorusGeometry(ob.radius * 1.18, 0.14, 8, 28),
+        cyanGlowMat,
+      );
+      accRingB.rotation.x = -Math.PI * 0.34;
+      accRingB.rotation.y = Math.PI * 0.25;
+      wellGroup.add(accRingB);
+
+      oGroup.add(wellGroup);
+      spinPart = wellGroup;
+      pulsePart = singularity;
+
+      const captureHalo = new THREE.Mesh(
+        new THREE.RingGeometry(ob.radius * 0.72, ob.radius * 1.28, 24),
+        new THREE.MeshBasicMaterial({
+          color: gCol,
+          transparent: true,
+          opacity: 0.62,
+          side: THREE.DoubleSide,
+        }),
+      );
+      captureHalo.rotation.x = -Math.PI / 2;
+      captureHalo.position.y = 0.08;
+      oGroup.add(captureHalo);
+    } else if (ob.kind === 'star-core') {
+      // Unique Level 4 Fun Element: Crackable Cosmic Star-Core Geode (+150 PTS, +28% boost, zero slowdown!)
+      const sCol = ob.colorHex ?? 0xfbbf24;
+      const geodeMat = new THREE.MeshStandardMaterial({
+        color: sCol,
+        emissive: sCol,
+        emissiveIntensity: 1.55,
+        roughness: 0.14,
+        metalness: 0.55,
+        flatShading: true,
+      });
+      const shardMat = new THREE.MeshBasicMaterial({
+        color: 0xe879f9,
+        transparent: true,
+        opacity: 0.85,
+      });
+
+      const coreGroup = new THREE.Group();
+      coreGroup.position.y = 2.25;
+
+      const innerStar = new THREE.Mesh(new THREE.OctahedronGeometry(ob.radius * 0.62, 0), geodeMat);
+      innerStar.scale.set(1, 1.32, 1);
+      coreGroup.add(innerStar);
+
+      const shardGeo = new THREE.OctahedronGeometry(0.42, 0);
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2;
+        const sh = new THREE.Mesh(shardGeo, shardMat);
+        sh.position.set(Math.cos(a) * ob.radius * 0.92, Math.sin(a * 2) * 0.42, Math.sin(a) * ob.radius * 0.92);
+        coreGroup.add(sh);
+      }
+
+      oGroup.add(coreGroup);
+      spinPart = coreGroup;
+      pulsePart = innerStar;
+
+      const targetRing = new THREE.Mesh(
+        new THREE.RingGeometry(ob.radius * 0.56, ob.radius * 1.04, 20),
+        new THREE.MeshBasicMaterial({
+          color: sCol,
+          transparent: true,
+          opacity: 0.62,
+          side: THREE.DoubleSide,
+        }),
+      );
+      targetRing.rotation.x = -Math.PI / 2;
+      targetRing.position.y = 0.08;
+      oGroup.add(targetRing);
     } else if (ob.kind === 'hover-drone') {
-      // Composite 5-part patrolling Canyon Recon Drone
+      // Composite 5-part patrolling Recon Drone
       const hoverCenter = new THREE.Group();
       hoverCenter.position.y = 1.75;
 
@@ -4347,4 +5729,413 @@ export function buildSpeedGates(track: BakedTrack): {
 
   return { group, visuals };
 }
+
+/**
+ * Builds curved specular Blue-Ice Slip-Glide Sheets embedded flush on the track deck!
+ * Driving over them cuts lateral drag for silky drift-carving and grants an ice-glide speed surge.
+ */
+export function buildIcePatches(track: BakedTrack, maxAnisotropy: number): THREE.Group {
+  const group = new THREE.Group();
+  const defs = track.def.icePatches;
+  if (!defs || defs.length === 0) return group;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  const grad = ctx.createLinearGradient(0, 0, 256, 0);
+  grad.addColorStop(0.0, 'rgba(56, 189, 248, 0.15)');
+  grad.addColorStop(0.15, 'rgba(125, 211, 252, 0.85)');
+  grad.addColorStop(0.5, 'rgba(224, 247, 255, 0.94)');
+  grad.addColorStop(0.85, 'rgba(125, 211, 252, 0.85)');
+  grad.addColorStop(1.0, 'rgba(56, 189, 248, 0.15)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 256, 512);
+
+  // Subtle translucent ice fracture veins & forward glide chevrons
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 6; i++) {
+    const y = 44 + i * 84;
+    ctx.beginPath();
+    ctx.moveTo(46, y + 36);
+    ctx.lineTo(128, y);
+    ctx.lineTo(210, y + 36);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(14, 165, 233, 0.42)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 10; i++) {
+    ctx.beginPath();
+    ctx.moveTo(28 + (i * 23) % 180, i * 48);
+    ctx.lineTo(72 + (i * 37) % 160, i * 48 + 38);
+    ctx.stroke();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1, 3);
+  tex.anisotropy = maxAnisotropy;
+
+  const iceMat = new THREE.MeshPhysicalMaterial({
+    map: tex,
+    color: 0xbaf2ff,
+    emissive: 0x0ea5e9,
+    emissiveIntensity: 0.36,
+    roughness: 0.08,
+    metalness: 0.14,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.05,
+    transparent: true,
+    opacity: 0.84,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+
+  for (const patch of defs) {
+    const segs = 22;
+    const span = patch.tEnd >= patch.tStart ? patch.tEnd - patch.tStart : 1 - patch.tStart + patch.tEnd;
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+
+    for (let i = 0; i <= segs; i++) {
+      const frac = i / segs;
+      const t = (patch.tStart + span * frac) % 1;
+      const halfW = patch.width * 0.5;
+      const leftW = trackToWorld(track, t, patch.lateral - halfW, 0.08);
+      const rightW = trackToWorld(track, t, patch.lateral + halfW, 0.08);
+
+      positions.push(leftW.pos.x, leftW.pos.y, leftW.pos.z);
+      positions.push(rightW.pos.x, rightW.pos.y, rightW.pos.z);
+      normals.push(leftW.frame.up.x, leftW.frame.up.y, leftW.frame.up.z);
+      normals.push(rightW.frame.up.x, rightW.frame.up.y, rightW.frame.up.z);
+      uvs.push(0, frac, 1, frac);
+
+      if (i < segs) {
+        const base = i * 2;
+        indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    const mesh = new THREE.Mesh(geo, iceMat);
+    mesh.renderOrder = 1;
+    group.add(mesh);
+  }
+
+  return group;
+}
+
+/**
+ * Builds Alpine Blizzard Crosswind Gust Zones — translucent sweeping snow-streak ribbons
+ * drifting laterally across exposed mountain ridges + directional roadside wind pylons!
+ */
+export function buildWindZones(track: BakedTrack): {
+  group: THREE.Group;
+  visuals: WindZoneVisual[];
+} {
+  const group = new THREE.Group();
+  const visuals: WindZoneVisual[] = [];
+  const defs = track.def.windZones;
+  if (!defs || defs.length === 0) return { group, visuals };
+
+  const streakGeo = new THREE.BoxGeometry(9.5, 0.16, 0.38);
+  const pylonGeo = new THREE.CylinderGeometry(0.38, 0.55, 7.5, 6);
+  const pylonMat = new THREE.MeshStandardMaterial({
+    color: 0x1e2c44,
+    roughness: 0.42,
+    metalness: 0.72,
+  });
+  const coneGeo = new THREE.ConeGeometry(0.95, 3.6, 8);
+  coneGeo.rotateZ(-Math.PI / 2);
+
+  for (const zone of defs) {
+    const zGroup = new THREE.Group();
+    const dir = zone.force >= 0 ? 1 : -1;
+    const spanT = zone.tEnd >= zone.tStart ? zone.tEnd - zone.tStart : 1 - zone.tStart + zone.tEnd;
+    const streakMat = new THREE.MeshBasicMaterial({
+      color: zone.colorHex,
+      transparent: true,
+      opacity: 0.58,
+      depthWrite: false,
+    });
+    const sockMat = new THREE.MeshStandardMaterial({
+      color: 0x7efcf7,
+      emissive: 0x38bdf8,
+      emissiveIntensity: 1.4,
+      roughness: 0.25,
+    });
+
+    const streaks: WindZoneVisual['streaks'] = [];
+    const streakCount = 10;
+    for (let i = 0; i < streakCount; i++) {
+      const frac = (i + 0.5) / streakCount;
+      const t = (zone.tStart + spanT * frac) % 1;
+      const h = 1.6 + (i % 4) * 1.45;
+      const { pos, frame } = trackToWorld(track, t, 0, h);
+      const basis = new THREE.Matrix4().makeBasis(
+        new THREE.Vector3(frame.right.x, frame.right.y, frame.right.z),
+        new THREE.Vector3(frame.up.x, frame.up.y, frame.up.z),
+        new THREE.Vector3(-frame.tangent.x, -frame.tangent.y, -frame.tangent.z),
+      );
+      const mesh = new THREE.Mesh(streakGeo, streakMat);
+      mesh.quaternion.setFromRotationMatrix(basis);
+      mesh.position.set(pos.x, pos.y, pos.z);
+      zGroup.add(mesh);
+
+      streaks.push({
+        mesh,
+        basePos: new THREE.Vector3(pos.x, pos.y, pos.z),
+        rightVec: new THREE.Vector3(frame.right.x, frame.right.y, frame.right.z),
+        span: frame.width * 0.92,
+        phase: i * 0.37,
+        speed: 0.65 + (i % 3) * 0.18,
+        dir,
+      });
+
+      // Roadside directional cryo-wind vane pylons at entry, middle & exit
+      if (i === 1 || i === 5 || i === 8) {
+        const edgeW = frame.width * 0.5 + 1.8;
+        for (const side of [-1, 1]) {
+          const pPos = trackToWorld(track, t, side * edgeW, 3.75).pos;
+          const pylon = new THREE.Mesh(pylonGeo, pylonMat);
+          pylon.position.set(pPos.x, pPos.y, pPos.z);
+          zGroup.add(pylon);
+
+          const sock = new THREE.Mesh(coneGeo, sockMat);
+          sock.quaternion.setFromRotationMatrix(basis);
+          if (dir < 0) sock.rotateY(Math.PI);
+          sock.position.set(pPos.x, pPos.y + 3.1, pPos.z);
+          zGroup.add(sock);
+        }
+      }
+    }
+
+    group.add(zGroup);
+    visuals.push({ group: zGroup, streaks });
+  }
+
+  return { group, visuals };
+}
+
+/**
+ * Builds curved Luminous Biolume Nectar Flow Streams embedded flush on the track deck!
+ * Riding inside them recharges plasma boost continuously and propels the craft along glowing veins.
+ */
+export function buildNectarStreams(track: BakedTrack, maxAnisotropy: number): THREE.Group {
+  const group = new THREE.Group();
+  const defs = track.def.nectarStreams;
+  if (!defs || defs.length === 0) return group;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  const grad = ctx.createLinearGradient(0, 0, 256, 0);
+  grad.addColorStop(0.0, 'rgba(52, 211, 153, 0.0)');
+  grad.addColorStop(0.18, 'rgba(52, 211, 153, 0.72)');
+  grad.addColorStop(0.5, 'rgba(244, 255, 232, 0.94)');
+  grad.addColorStop(0.82, 'rgba(244, 114, 182, 0.72)');
+  grad.addColorStop(1.0, 'rgba(52, 211, 153, 0.0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 256, 512);
+
+  // Flowing organic luminous veins & forward current ripples
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+  ctx.lineWidth = 4;
+  for (let i = 0; i < 6; i++) {
+    const y = 38 + i * 86;
+    ctx.beginPath();
+    ctx.moveTo(42, y + 36);
+    ctx.quadraticCurveTo(128, y - 14, 214, y + 36);
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(254, 240, 138, 0.75)';
+  for (let i = 0; i < 18; i++) {
+    ctx.beginPath();
+    ctx.arc(54 + (i * 31) % 148, 18 + (i * 29) % 476, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1, 3);
+  tex.anisotropy = maxAnisotropy;
+
+  for (const stream of defs) {
+    const mat = new THREE.MeshPhysicalMaterial({
+      map: tex,
+      color: stream.colorHex,
+      emissive: stream.colorHex,
+      emissiveIntensity: 0.68,
+      roughness: 0.14,
+      metalness: 0.1,
+      clearcoat: 1.0,
+      transparent: true,
+      opacity: 0.82,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+
+    const segs = 22;
+    const span =
+      stream.tEnd >= stream.tStart ? stream.tEnd - stream.tStart : 1 - stream.tStart + stream.tEnd;
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+
+    for (let i = 0; i <= segs; i++) {
+      const frac = i / segs;
+      const t = (stream.tStart + span * frac) % 1;
+      const halfW = stream.width * 0.5;
+      const leftW = trackToWorld(track, t, stream.lateral - halfW, 0.08);
+      const rightW = trackToWorld(track, t, stream.lateral + halfW, 0.08);
+
+      positions.push(leftW.pos.x, leftW.pos.y, leftW.pos.z);
+      positions.push(rightW.pos.x, rightW.pos.y, rightW.pos.z);
+      normals.push(leftW.frame.up.x, leftW.frame.up.y, leftW.frame.up.z);
+      normals.push(rightW.frame.up.x, rightW.frame.up.y, rightW.frame.up.z);
+      uvs.push(0, frac, 1, frac);
+
+      if (i < segs) {
+        const base = i * 2;
+        indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 1;
+    group.add(mesh);
+  }
+
+  return group;
+}
+
+/**
+ * Builds luminous Zero-G Low-Gravity Cosmic Sky Strips embedded flush on the track deck!
+ * Driving or jumping from them halves gravity for sweeping moon-jumps and adds a starlight speed boost.
+ */
+export function buildLowGravityZones(track: BakedTrack, maxAnisotropy: number): THREE.Group {
+  const group = new THREE.Group();
+  const defs = track.def.lowGravityZones;
+  if (!defs || defs.length === 0) return group;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  const grad = ctx.createLinearGradient(0, 0, 256, 0);
+  grad.addColorStop(0.0, 'rgba(168, 85, 247, 0.0)');
+  grad.addColorStop(0.14, 'rgba(168, 85, 247, 0.75)');
+  grad.addColorStop(0.5, 'rgba(245, 208, 254, 0.92)');
+  grad.addColorStop(0.86, 'rgba(56, 189, 248, 0.78)');
+  grad.addColorStop(1.0, 'rgba(56, 189, 248, 0.0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 256, 512);
+
+  // Futuristic antigravity grid lines + upward lift chevrons
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.74)';
+  ctx.lineWidth = 4;
+  for (let i = 0; i < 8; i++) {
+    const y = 32 + i * 64;
+    ctx.beginPath();
+    ctx.moveTo(34, y + 26);
+    ctx.lineTo(128, y);
+    ctx.lineTo(222, y + 26);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(232, 121, 249, 0.55)';
+  ctx.lineWidth = 2;
+  for (let x = 44; x <= 212; x += 42) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, 512);
+    ctx.stroke();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1, 3.5);
+  tex.anisotropy = maxAnisotropy;
+
+  for (const zone of defs) {
+    const mat = new THREE.MeshPhysicalMaterial({
+      map: tex,
+      color: zone.colorHex,
+      emissive: zone.colorHex,
+      emissiveIntensity: 0.78,
+      roughness: 0.14,
+      metalness: 0.25,
+      clearcoat: 1.0,
+      transparent: true,
+      opacity: 0.84,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+
+    const segs = 24;
+    const span = zone.tEnd >= zone.tStart ? zone.tEnd - zone.tStart : 1 - zone.tStart + zone.tEnd;
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+
+    for (let i = 0; i <= segs; i++) {
+      const frac = i / segs;
+      const t = (zone.tStart + span * frac) % 1;
+      const halfW = zone.width * 0.5;
+      const leftW = trackToWorld(track, t, zone.lateral - halfW, 0.08);
+      const rightW = trackToWorld(track, t, zone.lateral + halfW, 0.08);
+
+      positions.push(leftW.pos.x, leftW.pos.y, leftW.pos.z);
+      positions.push(rightW.pos.x, rightW.pos.y, rightW.pos.z);
+      normals.push(leftW.frame.up.x, leftW.frame.up.y, leftW.frame.up.z);
+      normals.push(rightW.frame.up.x, rightW.frame.up.y, rightW.frame.up.z);
+      uvs.push(0, frac, 1, frac);
+
+      if (i < segs) {
+        const base = i * 2;
+        indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 1;
+    group.add(mesh);
+  }
+
+  return group;
+}
+
+
+
 
