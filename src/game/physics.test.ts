@@ -155,7 +155,7 @@ test('magnetic ring pickup collects nearby rings cleanly and checkpoint awards b
   assert.ok(events.some((e) => e.type === 'ring-pickup'));
 
   // Cross checkpoint 1 (~0.25) and verify bonus event & points
-  player.t = 0.228;
+  player.t = 0.2292;
   player.speed = 70;
   stepRacerPhysics(
     player,
@@ -336,7 +336,7 @@ test('jump launch ramps propel UFO skyward, moving EMP hazards oscillate, and Q/
 
 test('holding Shift engages anti-grav air glide and Free Flight spawns solo craft with boosted freedom', () => {
   const track = buildBakedTrack(CIRCUITS['aether-ringway']);
-  const lv5 = getLevelDefinition(5);
+  const lv5 = getLevelDefinition(7);
 
   // Compare falling descent with normal drop vs holding Shift (hover glide)
   const [normalDrop] = createInitialRacers(track, lv5, 'race');
@@ -398,4 +398,68 @@ test('holding Shift engages anti-grav air glide and Free Flight spawns solo craf
     'Free Flight hop should impart extra aerial lift',
   );
 });
+
+test('different levels spawn different UFO archetypes, and updrafts & warp tunnels fire lift/surge physics', () => {
+  const lv3 = getLevelDefinition(3);
+  const lv6 = getLevelDefinition(6);
+  const lv8 = getLevelDefinition(8);
+
+  const track3 = buildBakedTrack(CIRCUITS[lv3.circuitId]);
+  const track6 = buildBakedTrack(CIRCUITS[lv6.circuitId]);
+  const track8 = buildBakedTrack(CIRCUITS[lv8.circuitId]);
+
+  const racers3 = createInitialRacers(track3, lv3, 'race');
+  const racers6 = createInitialRacers(track6, lv6, 'race');
+  const racers8 = createInitialRacers(track8, lv8, 'race');
+
+  assert.equal(racers3[0].chassisVariant, 'spore-jelly');
+  assert.equal(racers6[0].chassisVariant, 'cyber-spinner');
+  assert.equal(racers8[0].chassisVariant, 'quantum-seraph');
+  assert.notEqual(racers3[1].chassisVariant, racers6[1].chassisVariant, 'rival UFO types should vary across levels');
+
+  // Test Gravity Updraft Geyser lift on Biolume Jungle
+  const player3 = racers3[0];
+  const updraft = track3.def.updrafts[0];
+  const ev3: PhysicsEvent[] = [];
+  player3.t = updraft.t - 0.0005;
+  player3.lateral = updraft.lateral;
+  player3.speed = 68;
+  stepRacerPhysics(
+    player3,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track3,
+    1.0,
+    0.05,
+    new Set(),
+    ev3,
+    lv3,
+  );
+  assert.ok(ev3.some((e) => e.type === 'updraft-lift'), 'entering updraft geyser should emit updraft-lift');
+  assert.ok(player3.vy >= 20, `updraft should strongly lift UFO (vy=${player3.vy})`);
+  assert.ok(player3.styleScore >= 120, 'updraft should award +120 style points');
+
+  // Test Hyper-Warp Speed Tunnel surge on Neon Megacity
+  const player6 = racers6[0];
+  const tunnel = track6.def.warpTunnels[0];
+  const ev6: PhysicsEvent[] = [];
+  player6.t = tunnel.tStart + 0.005;
+  player6.lateral = 0;
+  player6.speed = 62;
+  player6.boostEnergy = 40;
+  stepRacerPhysics(
+    player6,
+    { throttle: 1, steer: 0, boostHeld: false, hopJustPressed: false },
+    track6,
+    2.0,
+    0.05,
+    new Set(),
+    ev6,
+    lv6,
+  );
+  assert.ok(ev6.some((e) => e.type === 'warp-surge'), 'entering warp tunnel should emit warp-surge');
+  assert.ok(player6.speed > 95, `warp tunnel should surge speed dramatically (speed=${player6.speed})`);
+  assert.ok(player6.boostEnergy >= 75, 'warp tunnel should recharge plasma boost by +35%');
+  assert.ok(player6.styleScore >= 200, 'warp tunnel should award +200 style points');
+});
+
 

@@ -10,8 +10,12 @@ const INITIAL_HUD: HudSnapshot = {
   phase: 'title',
   gameMode: 'race',
   levelNumber: 1,
-  levelName: 'Rookie Run',
+  levelName: 'Solar Canyon',
   difficultyTier: 'Easy',
+  fleetTag: 'Nova Vanguard Fleet',
+  playerChassisVariant: 'nova-interceptor',
+  playerCraftName: 'Nova Interceptor',
+  craftOverride: null,
   targetRank: 3,
   unlockedLevel: 1,
   clearedLevels: [],
@@ -84,6 +88,10 @@ export default function App() {
     engineRef.current?.setGameMode(mode);
   }, []);
 
+  const handleCycleCraft = useCallback((dir: 1 | -1) => {
+    engineRef.current?.cyclePlayerCraft(dir);
+  }, []);
+
   const handleNextLevel = useCallback(() => {
     engineRef.current?.startNextLevel();
   }, []);
@@ -125,10 +133,13 @@ export default function App() {
         <TitleScreen
           levelNumber={hud.levelNumber}
           gameMode={hud.gameMode}
+          playerChassisVariant={hud.playerChassisVariant}
+          craftOverride={hud.craftOverride}
           clearedLevels={hud.clearedLevels}
           muted={hud.muted}
           onSelectLevel={handleSelectLevel}
           onSelectMode={handleSelectMode}
+          onCycleCraft={handleCycleCraft}
           onStart={handleStart}
           onToggleMute={handleToggleMute}
         />

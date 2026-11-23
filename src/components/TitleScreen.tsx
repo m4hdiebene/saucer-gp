@@ -1,4 +1,4 @@
-import type { GameMode } from '../game/types';
+import type { GameMode, UfoChassisVariant } from '../game/types';
 import { CIRCUITS } from '../game/track';
 import {
   LEVELS,
@@ -6,14 +6,18 @@ import {
   getDifficultyBadgeTone,
   getLevelDefinition,
 } from '../game/levels';
+import { getUfoHandlingSpec } from '../game/raceRules';
 
 interface TitleScreenProps {
   levelNumber: number;
   gameMode: GameMode;
+  playerChassisVariant: UfoChassisVariant;
+  craftOverride: UfoChassisVariant | null;
   clearedLevels: number[];
   muted: boolean;
   onSelectLevel: (levelNumber: number) => void;
   onSelectMode: (mode: GameMode) => void;
+  onCycleCraft: (dir: 1 | -1) => void;
   onStart: () => void;
   onToggleMute: () => void;
 }
@@ -21,15 +25,19 @@ interface TitleScreenProps {
 export function TitleScreen({
   levelNumber,
   gameMode,
+  playerChassisVariant,
+  craftOverride,
   clearedLevels,
   muted,
   onSelectLevel,
   onSelectMode,
+  onCycleCraft,
   onStart,
   onToggleMute,
 }: TitleScreenProps) {
   const activeLevel = getLevelDefinition(levelNumber);
   const activeCircuit = CIRCUITS[activeLevel.circuitId];
+  const activeCraft = getUfoHandlingSpec(playerChassisVariant);
   const tierColor = getDifficultyBadgeTone(activeLevel.tier);
   const isFree = gameMode === 'free';
 
@@ -158,7 +166,7 @@ export function TitleScreen({
         <div className="pointer-events-auto flex flex-col gap-2.5 w-full max-w-[416px]">
           <div className="flex items-baseline justify-between text-xs font-semibold">
             <span className="text-[#f5cfa8]/90 tracking-wide">
-              8 Levels · 5 Planetary Worlds
+              8 Levels · 8 Unique Planetary Worlds
             </span>
             <span className="text-[#f5cfa8]/75 font-mono-num">
               {clearedLevels.length}/{LEVELS.length} Cleared
@@ -241,6 +249,39 @@ export function TitleScreen({
             </button>
           </div>
 
+          {/* Sleek 1-Row Exotic UFO Craft Switcher */}
+          <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl bg-[#161020]/90 border border-[#f5c89a]/20">
+            <button
+              type="button"
+              data-testid="craft-prev"
+              onClick={() => onCycleCraft(-1)}
+              aria-label="Previous UFO class"
+              className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/6 hover:bg-[#2df9f2]/20 text-[#fff6eb] hover:text-[#2df9f2] font-bold transition-colors cursor-pointer"
+            >
+              ‹
+            </button>
+            <div className="flex flex-col items-center text-center min-w-0">
+              <span className="text-xs font-display font-bold text-[#fff6eb] truncate">
+                {activeCraft.className}
+                <span className="text-[#2df9f2] ml-1.5 font-sans font-semibold text-[11px]">
+                  {craftOverride ? 'Custom' : `Lv.${activeLevel.number} UFO`}
+                </span>
+              </span>
+              <span className="text-[11px] text-[#f5cfa8]/78 truncate">
+                {activeCraft.tagline}
+              </span>
+            </div>
+            <button
+              type="button"
+              data-testid="craft-next"
+              onClick={() => onCycleCraft(1)}
+              aria-label="Next UFO class"
+              className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/6 hover:bg-[#2df9f2]/20 text-[#fff6eb] hover:text-[#2df9f2] font-bold transition-colors cursor-pointer"
+            >
+              ›
+            </button>
+          </div>
+
           {/* Clean unboxed level briefing & circuit details */}
           <div className="flex flex-col gap-0.5 hud-text-outline">
             <p className="text-sm font-semibold text-[#fff6eb]">
@@ -250,8 +291,8 @@ export function TitleScreen({
             </p>
             <p className="text-xs text-[#f5cfa8]/88">
               {isFree
-                ? `${activeCircuit.name} · Unlimited Laps · High-Lift Glide & Fast Boost`
-                : `${activeCircuit.name} · ${activeLevel.laps} Laps · Goal: ${formatTargetGoal(activeLevel.targetRank)}`}
+                ? `${activeCircuit.name} · Unlimited Laps · High-Lift Glide & Warp Tunnels`
+                : `${activeCircuit.name} · ${activeLevel.fleetTag} · ${activeLevel.laps} Laps · ${formatTargetGoal(activeLevel.targetRank)}`}
             </p>
           </div>
         </div>
@@ -272,9 +313,9 @@ export function TitleScreen({
         </div>
       </main>
 
-      {/* Bottom Safe Margin: Single flat borderless control-hint line */}
-      <footer className="relative z-10 flex items-center justify-between text-xs sm:text-sm text-[#f9e5cf]/90 hud-text-outline">
-        <p className="font-medium tracking-wide">
+      {/* Bottom Safe Margin: Compact high-contrast control-hint bar */}
+      <footer className="relative z-10 flex items-center justify-between text-xs sm:text-sm text-[#f9e5cf]/92">
+        <p className="inline-block px-3 py-1 rounded-lg bg-[#161020]/80 border border-[#f5c89a]/16 font-medium tracking-wide">
           WASD / Arrows Steer &amp; Thrust · Space Boost · Shift Hop &amp; Air Glide · Q / E Side-Dash · C Camera · Esc Pause
         </p>
       </footer>

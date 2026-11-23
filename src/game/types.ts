@@ -5,11 +5,22 @@ export type GameMode = 'race' | 'free';
 export type CircuitId =
   | 'solar-canyon'
   | 'glacier-spire'
+  | 'biolume-jungle'
   | 'nebula-ridge'
   | 'obsidian-caldera'
-  | 'aether-ringway';
+  | 'neon-megacity'
+  | 'aether-ringway'
+  | 'quantum-prism';
 
-export type BiomeTheme = 'canyon' | 'glacier' | 'nebula' | 'volcano' | 'aether';
+export type BiomeTheme =
+  | 'canyon'
+  | 'glacier'
+  | 'biolume'
+  | 'nebula'
+  | 'volcano'
+  | 'cybercity'
+  | 'aether'
+  | 'quantum';
 
 export type DifficultyTier =
   | 'Easy'
@@ -21,11 +32,38 @@ export type DifficultyTier =
 
 export type ImpactType = 'none' | 'ufo-bump' | 'wall-scrape' | 'shock-hit';
 
+export type UfoChassisVariant =
+  | 'nova-interceptor'
+  | 'apex-blade'
+  | 'volt-catamaran'
+  | 'titan-vanguard'
+  | 'slip-manta'
+  | 'drift-halo'
+  | 'cryo-prism'
+  | 'spore-jelly'
+  | 'tri-orbiter'
+  | 'magma-forge'
+  | 'cyber-spinner'
+  | 'quantum-seraph';
+
+export interface UfoHandlingSpec {
+  variant: UfoChassisVariant;
+  className: string;
+  tagline: string;
+  speedMult: number;
+  steerMult: number;
+  hopMult: number;
+  dashCooldownMult: number;
+  mass: number;
+}
+
 export interface LevelDefinition {
   number: number; // 1..8
   name: string;
   tier: DifficultyTier;
   circuitId: CircuitId;
+  fleetTag: string; // e.g., "Cryo Crystal Fleet"
+  featuredPlayerChassis: UfoChassisVariant;
   laps: number;
   targetRank: number; // Finish <= targetRank to clear level
   aiPaceScale: number; // Scales rival base speed & skill
@@ -82,13 +120,31 @@ export interface JumpRampDef {
   speedBoost?: number; // extra forward impulse on launch
 }
 
+export interface UpdraftDef {
+  id: string;
+  t: number; // track progress [0, 1)
+  lateral: number; // offset from center in meters
+  radius: number; // capture radius in meters
+  liftVel: number; // vertical lift velocity (m/s)
+  colorHex: number; // vortex column color
+}
+
+export interface WarpTunnelDef {
+  id: string;
+  tStart: number; // entry progress [0, 1)
+  tEnd: number; // exit progress [0, 1)
+  ringCount: number; // number of glowing arch hoops in tunnel
+  speedBonus: number; // forward surge impulse
+  colorHex: number; // tunnel neon accent
+}
+
 export interface EnergyRingDef {
   id: string;
   t: number;
   lateral: number;
   heightOffset: number; // height above track deck
   radius: number;
-  elevated: boolean; // rewards hover hop / jump ramp
+  elevated: boolean; // rewards hover hop / jump ramp / updraft
 }
 
 export interface ShockHazardDef {
@@ -109,9 +165,12 @@ export interface CircuitDefinition {
   subtitle: string;
   laps: number;
   trackWidth: number; // default/nominal track width
+  hasOverpass?: boolean;
   controlPoints: Array<{ x: number; y: number; z: number; bank?: number; width?: number }>;
   boostPads: BoostPadDef[];
   jumpRamps: JumpRampDef[];
+  updrafts: UpdraftDef[];
+  warpTunnels: WarpTunnelDef[];
   rings: EnergyRingDef[];
   hazards: ShockHazardDef[];
   skyTopColor: string;
@@ -120,14 +179,6 @@ export interface CircuitDefinition {
   terrainPrimary: string;
   terrainAccent: string;
 }
-
-export type UfoChassisVariant =
-  | 'nova-interceptor'
-  | 'apex-blade'
-  | 'volt-catamaran'
-  | 'titan-vanguard'
-  | 'slip-manta'
-  | 'drift-halo';
 
 export interface RacerConfig {
   id: string;
@@ -148,6 +199,7 @@ export interface RacerState {
   name: string;
   isPlayer: boolean;
   aiPolicy?: AiPolicy;
+  chassisVariant: UfoChassisVariant;
   hullColor: number;
   glowColor: number;
   skillFactor: number;
@@ -155,7 +207,7 @@ export interface RacerState {
   // Track-relative coordinates
   t: number; // [0, 1) along track spline
   lateral: number; // meters from track centerline (-halfWidth .. +halfWidth)
-  hoverY: number; // additional vertical height from hover hop / jump ramps
+  hoverY: number; // additional vertical height from hover hop / jump ramps / updrafts
   vy: number; // vertical velocity for hop & glide
   speed: number; // forward speed (m/s)
   lateralVel: number; // lateral velocity (m/s)
@@ -166,11 +218,13 @@ export interface RacerState {
   // Energy & abilities
   boostEnergy: number; // 0..100
   isBoosting: boolean;
-  boostPadTimer: number; // active pad surge timer
+  boostPadTimer: number; // active pad / warp surge timer
   hopCooldown: number;
   hopBufferTimer: number;
   dashCooldown: number; // Q/E side-dash cooldown
   rampCooldown: number; // prevents double-trigger on same ramp
+  updraftCooldown: number; // prevents spam-trigger inside updraft vortex
+  warpCooldown: number; // prevents spam-trigger inside warp tunnel
   hitFlashTimer: number;
   shockSlowTimer: number;
   squashX: number;
@@ -231,6 +285,7 @@ export interface StandingEntry {
   id: string;
   name: string;
   isPlayer: boolean;
+  chassisVariant: UfoChassisVariant;
   rank: number;
   finished: boolean;
   finishTime: number | null;
@@ -245,6 +300,10 @@ export interface HudSnapshot {
   levelNumber: number;
   levelName: string;
   difficultyTier: DifficultyTier;
+  fleetTag: string;
+  playerChassisVariant: UfoChassisVariant;
+  playerCraftName: string;
+  craftOverride: UfoChassisVariant | null;
   targetRank: number;
   unlockedLevel: number;
   clearedLevels: number[];

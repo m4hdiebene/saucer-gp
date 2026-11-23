@@ -11,12 +11,15 @@ import {
   isLevelCleared,
 } from './levels';
 
-test('8-level galactic tour escalates difficulty strictly across 5 distinct circuits', () => {
+test('8-level galactic tour escalates difficulty strictly across 8 unique circuits and 8 featured UFO classes', () => {
   assert.equal(LEVELS.length, 8);
   assert.equal(MAX_LEVEL, 8);
 
   const uniqueCircuits = new Set(LEVELS.map((l) => l.circuitId));
-  assert.equal(uniqueCircuits.size, 5, '8 levels should span all 5 distinct planetary biomes');
+  assert.equal(uniqueCircuits.size, 8, '8 levels should span all 8 unique planetary worlds');
+
+  const uniquePlayerUfos = new Set(LEVELS.map((l) => l.featuredPlayerChassis));
+  assert.equal(uniquePlayerUfos.size, 8, 'each level should feature a distinct signature UFO class');
 
   for (let i = 1; i < LEVELS.length; i++) {
     const prev = LEVELS[i - 1];
@@ -88,7 +91,10 @@ test('level clear rules and unlock progression obey targetRank and clamp cleanly
   assert.equal(formatTargetGoal(3), 'Finish Top 3');
   assert.equal(getLevelCircuitId(1), 'solar-canyon');
   assert.equal(getLevelCircuitId(2), 'glacier-spire');
-  assert.equal(getLevelCircuitId(3), 'nebula-ridge');
-  assert.equal(getLevelCircuitId(4), 'obsidian-caldera');
-  assert.equal(getLevelCircuitId(5), 'aether-ringway');
+  assert.equal(getLevelCircuitId(3), 'biolume-jungle');
+  assert.equal(getLevelCircuitId(4), 'nebula-ridge');
+  assert.equal(getLevelCircuitId(5), 'obsidian-caldera');
+  assert.equal(getLevelCircuitId(6), 'neon-megacity');
+  assert.equal(getLevelCircuitId(7), 'aether-ringway');
+  assert.equal(getLevelCircuitId(8), 'quantum-prism');
 });

@@ -68,6 +68,12 @@ export function HudOverlay({
             >
               {hud.difficultyTier}
             </span>
+            <span
+              data-testid="hud-craft"
+              className="text-[10px] font-semibold text-[#2df9f2]/90 tracking-wide whitespace-nowrap"
+            >
+              {hud.playerCraftName}
+            </span>
           </div>
 
           <div className="w-px self-stretch bg-[#f5c89a]/20" aria-hidden="true" />
@@ -339,7 +345,7 @@ export function HudOverlay({
 
       {/* BOTTOM PERIMETER ROW: Quiet control hint left + Speedometer & Boost Bar right */}
       <div className="flex items-end justify-between gap-4">
-        <p className="hidden md:block text-xs font-medium text-[#f9e5cf]/80 hud-text-outline">
+        <p className="hidden md:block px-3 py-1.5 rounded-lg bg-[#18101c]/80 border border-[#f5c89a]/18 text-xs font-medium text-[#f9e5cf]/92">
           WASD Steer · Space Boost · Shift Hop/Glide · Q/E Dash · C Cam
         </p>
 

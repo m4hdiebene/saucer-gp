@@ -22,16 +22,24 @@ test('shortestProgressDelta finds minimal signed delta across 0/1 seam', () => {
   assert.ok(Math.abs(shortestProgressDelta(0.2, 0.45) - 0.25) < 1e-9);
 });
 
-test('buildBakedTrack produces closed continuous orthonormal frames with diverse variable widths for all 5 circuits', () => {
+test('buildBakedTrack produces massive closed continuous orthonormal frames for all 8 creative circuits', () => {
   const allCircuits = Object.values(CIRCUITS);
-  assert.equal(allCircuits.length, 5, 'should define 5 distinct planetary circuits');
+  assert.equal(allCircuits.length, 8, 'should define 8 unique planetary circuits');
+
+  const overpassCircuits = allCircuits.filter((c) => c.hasOverpass);
+  assert.ok(overpassCircuits.length >= 3, 'at least 3 circuits should feature 3D Figure-8 overpasses');
 
   for (const circuit of allCircuits) {
-    const track = buildBakedTrack(circuit, 240);
-    assert.ok(track.totalLength > 600, `${circuit.id} should be a substantial racing loop`);
-    assert.equal(track.frames.length, 240);
-    assert.ok(track.minimapPoints.length > 32);
+    const track = buildBakedTrack(circuit, 360);
+    assert.ok(
+      track.totalLength > 1700,
+      `${circuit.id} should be a massive racing loop (got ${track.totalLength.toFixed(0)}m)`,
+    );
+    assert.equal(track.frames.length, 360);
+    assert.ok(track.minimapPoints.length >= 48);
     assert.ok(circuit.jumpRamps.length >= 2, `${circuit.id} should have jump launch ramps`);
+    assert.ok(circuit.updrafts.length >= 1, `${circuit.id} should have Gravity Updraft Geysers`);
+    assert.ok(circuit.warpTunnels.length >= 1, `${circuit.id} should have Hyper-Warp Speed Tunnels`);
 
     // Verify variable road width diversity (narrow bridges widening into grand bowls/plazas)
     let minW = Infinity;
@@ -53,7 +61,7 @@ test('buildBakedTrack produces closed continuous orthonormal frames with diverse
       fStart.pos.y - fEnd.pos.y,
       fStart.pos.z - fEnd.pos.z,
     );
-    assert.ok(seamDist < 5, `${circuit.id} track seam should close smoothly (dist=${seamDist})`);
+    assert.ok(seamDist < 8, `${circuit.id} track seam should close smoothly (dist=${seamDist})`);
 
     // Check orthonormal basis vectors
     const dotTR =

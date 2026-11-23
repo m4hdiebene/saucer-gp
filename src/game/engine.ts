@@ -11,6 +11,7 @@ import type {
   PlayerInput,
   RaceEventCallout,
   RacerState,
+  UfoChassisVariant,
 } from './types';
 import {
   CIRCUITS,
@@ -22,10 +23,12 @@ import {
 } from './track';
 import {
   CHECKPOINT_PROGRESS,
-  RACER_ROSTER,
+  PLAYABLE_UFO_VARIANTS,
   computeStandings,
   createInitialRacers,
+  getLevelRoster,
   getRacerRank,
+  getUfoHandlingSpec,
 } from './raceRules';
 import {
   MAX_LEVEL,
@@ -57,12 +60,17 @@ import {
   buildStartGantry,
   buildTrackMesh,
   buildUfoModel,
+  buildUpdrafts,
+  buildWarpTunnels,
   createContactShadowTexture,
   createUnderglowTexture,
   type CheckpointVisual,
+  type FloatingPropVisual,
   type HazardVisual,
   type RingVisual,
   type UfoVisualRig,
+  type UpdraftVisual,
+  type WarpTunnelVisual,
 } from './models';
 import { SaucerAudio } from './audio';
 
@@ -143,6 +151,7 @@ export class SaucerGameEngine {
   private gameMode: GameMode = 'race';
   private levelNumber = 1;
   private levelDef: LevelDefinition = getLevelDefinition(1);
+  private craftOverride: UfoChassisVariant | null = null;
   private unlockedLevel = 1;
   private clearedLevels: number[] = [];
   private lastLevelCleared = false;
@@ -153,7 +162,10 @@ export class SaucerGameEngine {
   private ringVisuals: RingVisual[] = [];
   private checkpointVisuals: CheckpointVisual[] = [];
   private hazardVisuals: HazardVisual[] = [];
+  private updraftVisuals: UpdraftVisual[] = [];
+  private warpTunnelVisuals: WarpTunnelVisual[] = [];
   private rotatingGates: THREE.Group[] = [];
+  private floatingProps: FloatingPropVisual[] = [];
   private collectedRings = new Set<string>();
 
   // Pooled particle system (zero-GC InstancedMesh) + pooled 3D impact shockwave rings
@@ -247,7 +259,7 @@ export class SaucerGameEngine {
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(64, width / height, 0.3, 1250);
+    this.camera = new THREE.PerspectiveCamera(64, width / height, 0.3, 2600);
 
     // Mandatory studio PBR environment reflections via RoomEnvironment on every device
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -297,8 +309,8 @@ export class SaucerGameEngine {
     this.sunLight.shadow.mapSize.width = 1024;
     this.sunLight.shadow.mapSize.height = 1024;
     this.sunLight.shadow.camera.near = 20;
-    this.sunLight.shadow.camera.far = 520;
-    const d = 160;
+    this.sunLight.shadow.camera.far = 850;
+    const d = 260;
     this.sunLight.shadow.camera.left = -d;
     this.sunLight.shadow.camera.right = d;
     this.sunLight.shadow.camera.top = d;
@@ -321,6 +333,14 @@ export class SaucerGameEngine {
       this.sunLight.intensity = 2.25;
       this.rimLight.color.setHex(0x38bdf8);
       this.rimLight.intensity = 0.92;
+    } else if (biome === 'biolume') {
+      this.hemiLight.color.setHex(0x6ee7b7);
+      this.hemiLight.groundColor.setHex(0x115e59);
+      this.hemiLight.intensity = 0.96;
+      this.sunLight.color.setHex(0xd1fae5);
+      this.sunLight.intensity = 2.05;
+      this.rimLight.color.setHex(0xf472b6);
+      this.rimLight.intensity = 1.05;
     } else if (biome === 'volcano') {
       this.hemiLight.color.setHex(0xffa773);
       this.hemiLight.groundColor.setHex(0x731d10);
@@ -329,6 +349,14 @@ export class SaucerGameEngine {
       this.sunLight.intensity = 2.2;
       this.rimLight.color.setHex(0xff5722);
       this.rimLight.intensity = 0.98;
+    } else if (biome === 'cybercity') {
+      this.hemiLight.color.setHex(0x7dd3fc);
+      this.hemiLight.groundColor.setHex(0x4c1d95);
+      this.hemiLight.intensity = 0.95;
+      this.sunLight.color.setHex(0xe0f2fe);
+      this.sunLight.intensity = 2.1;
+      this.rimLight.color.setHex(0xec4899);
+      this.rimLight.intensity = 1.15;
     } else if (biome === 'aether') {
       this.hemiLight.color.setHex(0xd6efff);
       this.hemiLight.groundColor.setHex(0xd8c7a3);
@@ -337,6 +365,14 @@ export class SaucerGameEngine {
       this.sunLight.intensity = 2.38;
       this.rimLight.color.setHex(0x7dd3fc);
       this.rimLight.intensity = 0.86;
+    } else if (biome === 'quantum') {
+      this.hemiLight.color.setHex(0xd8b4fe);
+      this.hemiLight.groundColor.setHex(0x311042);
+      this.hemiLight.intensity = 0.96;
+      this.sunLight.color.setHex(0xfef3c7);
+      this.sunLight.intensity = 2.22;
+      this.rimLight.color.setHex(0x2df9f2);
+      this.rimLight.intensity = 1.15;
     } else if (biome === 'nebula') {
       this.hemiLight.color.setHex(0x9b8cf5);
       this.hemiLight.groundColor.setHex(0x5c3a6e);
@@ -596,7 +632,10 @@ export class SaucerGameEngine {
     this.ringVisuals = [];
     this.checkpointVisuals = [];
     this.hazardVisuals = [];
+    this.updraftVisuals = [];
+    this.warpTunnelVisuals = [];
     this.rotatingGates = [];
+    this.floatingProps = [];
   }
 
   public loadLevelWorld(levelNum: number): void {
@@ -606,24 +645,37 @@ export class SaucerGameEngine {
     this.clearWorldGroup();
 
     const def = CIRCUITS[this.circuitId];
-    this.track = buildBakedTrack(def, 360);
+    this.track = buildBakedTrack(def, 480);
     const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
 
-    // Match fog, background, and 3-point lighting to planetary biome
+    // Match fog, background, and 3-point lighting to planetary biome (tuned for huge scenic vistas)
     this.scene.background = new THREE.Color(def.fogColor);
-    this.scene.fog = new THREE.FogExp2(def.fogColor, def.biome === 'aether' ? 0.0016 : 0.0021);
+    const fogDensity =
+      def.biome === 'aether' || def.biome === 'cybercity' || def.biome === 'quantum'
+        ? 0.00108
+        : 0.00135;
+    this.scene.fog = new THREE.FogExp2(def.fogColor, fogDensity);
     this.applyBiomeLighting(def.biome);
 
-    // Sky dome + Biome environment + Variable-width Track + Gantry + Boost pads + Jump Ramps + Rings + Checkpoints + Hazards
+    // Sky dome + Biome environment + Track + Gantry + Boost pads + Jump Ramps + Updrafts + Warp Tunnels + Rings + Checkpoints + Hazards
     this.worldGroup.add(buildSkyDome(def.skyTopColor, def.skyHorizonColor));
     const envBuilt = buildCanyonEnvironment(this.track, maxAniso, this.isSoftwareGl);
     this.worldGroup.add(envBuilt.group);
     this.rotatingGates = envBuilt.rotatingGates;
+    this.floatingProps = envBuilt.floatingProps;
 
     this.worldGroup.add(buildTrackMesh(this.track, maxAniso, this.isSoftwareGl));
     this.worldGroup.add(buildStartGantry(this.track, this.isSoftwareGl));
     this.worldGroup.add(buildBoostPads(this.track, maxAniso));
     this.worldGroup.add(buildJumpRamps(this.track, maxAniso));
+
+    const updrafts = buildUpdrafts(this.track);
+    this.worldGroup.add(updrafts.group);
+    this.updraftVisuals = updrafts.visuals;
+
+    const warpTunnels = buildWarpTunnels(this.track);
+    this.worldGroup.add(warpTunnels.group);
+    this.warpTunnelVisuals = warpTunnels.visuals;
 
     const rings = buildEnergyRings(this.track);
     this.worldGroup.add(rings.group);
@@ -641,8 +693,13 @@ export class SaucerGameEngine {
     this.worldGroup.add(hazards.group);
     this.hazardVisuals = hazards.visuals;
 
-    // Build all 6 bespoke UFO racer composite 3D rigs (visibility toggles cleanly for Race vs Free Flight)
-    for (const cfg of RACER_ROSTER) {
+    // Build level-specific exotic 6-UFO fleet (with distinct player craft & rivals per level!)
+    const levelRoster = getLevelRoster(
+      this.levelNumber,
+      this.levelDef.featuredPlayerChassis,
+      this.craftOverride,
+    );
+    for (const cfg of levelRoster) {
       const rig = buildUfoModel(cfg, this.isSoftwareGl, this.shadowTex, maxAniso, this.underglowTex);
       this.worldGroup.add(rig.root);
       this.worldGroup.add(rig.contactShadow);
@@ -657,7 +714,12 @@ export class SaucerGameEngine {
   }
 
   private resetRaceEntities(): void {
-    this.racers = createInitialRacers(this.track, this.levelDef, this.gameMode);
+    this.racers = createInitialRacers(
+      this.track,
+      this.levelDef,
+      this.gameMode,
+      this.craftOverride,
+    );
     const activeIds = new Set(this.racers.map((r) => r.id));
     for (const [id, rig] of this.ufoRigs.entries()) {
       const vis = activeIds.has(id);
@@ -721,6 +783,60 @@ export class SaucerGameEngine {
   public setGameMode(mode: GameMode): void {
     if (mode === this.gameMode) return;
     this.gameMode = mode;
+    this.resetRaceEntities();
+    this.syncRacerVisuals(0);
+    this.emitHudSnapshot();
+  }
+
+  public cyclePlayerCraft(dir: 1 | -1): void {
+    const activeVariant = this.craftOverride ?? this.levelDef.featuredPlayerChassis;
+    const idx = PLAYABLE_UFO_VARIANTS.indexOf(activeVariant);
+    const nextIdx = (idx + dir + PLAYABLE_UFO_VARIANTS.length) % PLAYABLE_UFO_VARIANTS.length;
+    const nextVariant = PLAYABLE_UFO_VARIANTS[nextIdx];
+    this.craftOverride = nextVariant === this.levelDef.featuredPlayerChassis ? null : nextVariant;
+    this.rebuildPlayerRigInPlace();
+  }
+
+  public resetCraftToLevelDefault(): void {
+    if (this.craftOverride === null) return;
+    this.craftOverride = null;
+    this.rebuildPlayerRigInPlace();
+  }
+
+  private rebuildPlayerRigInPlace(): void {
+    const oldRig = this.ufoRigs.get('player');
+    if (oldRig) {
+      this.worldGroup.remove(oldRig.root, oldRig.contactShadow, oldRig.groundGlow);
+      oldRig.root.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const m = obj as THREE.Mesh;
+          m.geometry?.dispose();
+          if (Array.isArray(m.material)) m.material.forEach((mat) => mat.dispose());
+          else m.material?.dispose();
+        }
+      });
+      oldRig.contactShadow.geometry.dispose();
+      (oldRig.contactShadow.material as THREE.Material).dispose();
+      oldRig.groundGlow.geometry.dispose();
+      (oldRig.groundGlow.material as THREE.Material).dispose();
+      for (const tex of oldRig.disposableTextures) tex.dispose();
+    }
+    const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
+    const roster = getLevelRoster(
+      this.levelNumber,
+      this.levelDef.featuredPlayerChassis,
+      this.craftOverride,
+    );
+    const playerCfg = roster[0];
+    const newRig = buildUfoModel(
+      playerCfg,
+      this.isSoftwareGl,
+      this.shadowTex,
+      maxAniso,
+      this.underglowTex,
+    );
+    this.worldGroup.add(newRig.root, newRig.contactShadow, newRig.groundGlow);
+    this.ufoRigs.set('player', newRig);
     this.resetRaceEntities();
     this.syncRacerVisuals(0);
     this.emitHudSnapshot();
@@ -960,6 +1076,22 @@ export class SaucerGameEngine {
           this.audio.playBoostPad();
           this.applyCameraRecoil(0, -1.8, 0);
           this.pushCallout('SKY LAUNCH! +150', 'amber', 1.05);
+        }
+      } else if (ev.type === 'updraft-lift') {
+        this.spawnImpactRing(ev.worldX, ev.worldY - 0.3, ev.worldZ, 0, 1, 0, 0x34d399, 4.8, 0.5);
+        this.spawnParticles(ev.worldX, ev.worldY, ev.worldZ, ev.isPlayer ? 22 : 8, 0x7efcf7, 18, 0.55, 1.3);
+        if (ev.isPlayer) {
+          this.audio.playRingPickup(true);
+          this.applyCameraRecoil(0, -2.0, 0);
+          this.pushCallout('UPDRAFT LIFT! +120', 'cyan', 1.05);
+        }
+      } else if (ev.type === 'warp-surge') {
+        this.spawnImpactRing(ev.worldX, ev.worldY, ev.worldZ, 0, 0, 1, 0xf472b6, 5.2, 0.45);
+        this.spawnParticles(ev.worldX, ev.worldY, ev.worldZ, ev.isPlayer ? 26 : 10, 0x2df9f2, 22, 0.52, 1.35);
+        if (ev.isPlayer) {
+          this.audio.playBoostPad();
+          this.applyCameraRecoil(0, -1.2, 0);
+          this.pushCallout('WARP SURGE! +200', 'amber', 1.15);
         }
       } else if (ev.type === 'side-dash') {
         const dir = ev.impactDir ?? 1;
@@ -1274,6 +1406,34 @@ export class SaucerGameEngine {
       this.rotatingGates[i].rotation.z = elapsed * (0.42 + i * 0.14) * dir;
     }
 
+    // Animate floating creative biome props (biolume spores, nebula asteroids, quantum octahedrons)
+    for (let i = 0; i < this.floatingProps.length; i++) {
+      const fp = this.floatingProps[i];
+      fp.mesh.position.y = fp.baseY + Math.sin(elapsed * fp.bobSpeed + fp.phase) * fp.bobAmp;
+      fp.mesh.rotation.y = elapsed * fp.rotSpeed + fp.phase;
+    }
+
+    // Animate Gravity Updraft Geyser vortex columns & rising energy hoops
+    for (let i = 0; i < this.updraftVisuals.length; i++) {
+      const uv = this.updraftVisuals[i];
+      uv.spinColumn.rotation.y = elapsed * 2.4 + i;
+      for (let k = 0; k < uv.rings.length; k++) {
+        const phase = ((elapsed * 0.85 + k / uv.rings.length + i * 0.17) % 1 + 1) % 1;
+        uv.rings[k].position.y = 1.2 + phase * 19.5;
+        const s = 0.72 + phase * 0.45;
+        uv.rings[k].scale.setScalar(s);
+      }
+    }
+
+    // Animate Hyper-Warp Speed Tunnel neon ring wave
+    for (let i = 0; i < this.warpTunnelVisuals.length; i++) {
+      const wt = this.warpTunnelVisuals[i];
+      for (let k = 0; k < wt.hoops.length; k++) {
+        const pulse = 1.0 + Math.sin(elapsed * 8.5 - k * 1.15) * 0.045;
+        wt.hoops[k].scale.set(pulse, 0.72 * pulse, pulse);
+      }
+    }
+
     // Animate floating Energy Rings
     for (let i = 0; i < this.ringVisuals.length; i++) {
       const rv = this.ringVisuals[i];
@@ -1476,12 +1636,18 @@ export class SaucerGameEngine {
       };
     });
 
+    const playerSpec = getUfoHandlingSpec(player.chassisVariant);
+
     this.onHudUpdate({
       phase: this.phase,
       gameMode: this.gameMode,
       levelNumber: this.levelDef.number,
       levelName: this.levelDef.name,
       difficultyTier: this.levelDef.tier,
+      fleetTag: this.levelDef.fleetTag,
+      playerChassisVariant: player.chassisVariant,
+      playerCraftName: playerSpec.className,
+      craftOverride: this.craftOverride,
       targetRank: this.levelDef.targetRank,
       unlockedLevel: this.unlockedLevel,
       clearedLevels: this.clearedLevels,

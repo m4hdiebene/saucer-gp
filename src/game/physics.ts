@@ -12,7 +12,7 @@ import {
   trackToWorld,
   wrapProgress,
 } from './track';
-import { advanceLapProgress } from './raceRules';
+import { advanceLapProgress, getUfoHandlingSpec } from './raceRules';
 import { getLevelDefinition } from './levels';
 
 export const PHYSICS_CONSTANTS = {
@@ -81,6 +81,8 @@ export interface PhysicsEvent {
     | 'boost-start'
     | 'boost-pad'
     | 'ramp-launch'
+    | 'updraft-lift'
+    | 'warp-surge'
     | 'side-dash'
     | 'ring-pickup'
     | 'checkpoint'
@@ -206,6 +208,13 @@ export function computeAiInput(
         if (d > 0.005 && d < bestTargetDist) {
           bestTargetDist = d;
           targetLane = ramp.lateral;
+        }
+      }
+      for (const updraft of track.def.updrafts) {
+        const d = shortestProgressDelta(racer.t, updraft.t);
+        if (d > 0.005 && d < bestTargetDist) {
+          bestTargetDist = d;
+          targetLane = updraft.lateral;
         }
       }
       racer.aiTargetLane = targetLane !== null ? targetLane : Math.sin(raceTime * 1.2) * halfSafe * 0.5;
@@ -337,6 +346,7 @@ export function stepRacerPhysics(
   gameMode: GameMode = 'race',
 ): void {
   const C = PHYSICS_CONSTANTS;
+  const spec = getUfoHandlingSpec(racer.chassisVariant);
   const isFree = gameMode === 'free' && racer.isPlayer;
   const speedClass = level.speedClassScale;
   const totalLaps = isFree ? 999 : level.laps;
@@ -346,6 +356,8 @@ export function stepRacerPhysics(
   if (racer.hopCooldown > 0) racer.hopCooldown = Math.max(0, racer.hopCooldown - dt);
   if (racer.dashCooldown > 0) racer.dashCooldown = Math.max(0, racer.dashCooldown - dt);
   if (racer.rampCooldown > 0) racer.rampCooldown = Math.max(0, racer.rampCooldown - dt);
+  if (racer.updraftCooldown > 0) racer.updraftCooldown = Math.max(0, racer.updraftCooldown - dt);
+  if (racer.warpCooldown > 0) racer.warpCooldown = Math.max(0, racer.warpCooldown - dt);
   if (racer.hitFlashTimer > 0) racer.hitFlashTimer = Math.max(0, racer.hitFlashTimer - dt);
   if (racer.shockSlowTimer > 0) racer.shockSlowTimer = Math.max(0, racer.shockSlowTimer - dt);
   if (racer.bumpCooldown > 0) racer.bumpCooldown = Math.max(0, racer.bumpCooldown - dt);
@@ -366,9 +378,9 @@ export function stepRacerPhysics(
     racer.hopBufferTimer = Math.max(0, racer.hopBufferTimer - dt);
   }
 
-  // Trigger Hover Hop if buffered and grounded/off cooldown (higher jump & faster cooldown in Free Flight!)
+  // Trigger Hover Hop if buffered and grounded/off cooldown (scaled by UFO hopMult & Free Flight!)
   if (racer.hopBufferTimer > 0 && racer.hoverY <= 0.15 && racer.hopCooldown <= 0) {
-    racer.vy = isFree ? C.hopInitialVel * 1.28 : C.hopInitialVel;
+    racer.vy = (isFree ? C.hopInitialVel * 1.28 : C.hopInitialVel) * spec.hopMult;
     racer.hopCooldown = isFree ? 0.36 : C.hopCooldownDuration;
     racer.hopBufferTimer = 0;
     racer.squashX = 0.85;
@@ -427,7 +439,7 @@ export function stepRacerPhysics(
       -C.maxLateralSpeed * 1.45,
       C.maxLateralSpeed * 1.45,
     );
-    racer.dashCooldown = isFree ? 0.45 : C.dashCooldownDuration;
+    racer.dashCooldown = (isFree ? 0.45 : C.dashCooldownDuration) * spec.dashCooldownMult;
     racer.squashX = 1.16;
     racer.squashY = 0.88;
     events.push({
@@ -466,9 +478,10 @@ export function stepRacerPhysics(
     racer.boostEnergy = Math.min(100, racer.boostEnergy + regenRate * dt);
   }
 
-  // Target speed calculation scaled by level speed class & AI boost tier
+  // Target speed calculation scaled by level speed class, UFO chassis class & AI boost tier
   const aiBoostScale = clamp(0.45 + level.aiBoostAggression * 0.3, 0.5, 0.86);
-  const baseCap = C.maxBaseSpeed * speedClass * (racer.isPlayer ? 1.0 : racer.skillFactor);
+  const baseCap =
+    C.maxBaseSpeed * speedClass * spec.speedMult * (racer.isPlayer ? 1.0 : racer.skillFactor);
   const boostAdd = racer.isBoosting
     ? C.boostExtraSpeed * speedClass * (racer.isPlayer ? 1.0 : aiBoostScale)
     : 0;
@@ -510,11 +523,12 @@ export function stepRacerPhysics(
   const currFrame = sampleTrackFrame(track, nextT);
   const deckHalfTrack = currFrame.width * 0.5 - 2.1;
 
-  // Smooth, stable lateral steering + gentle curve feel
+  // Smooth, stable lateral steering + gentle curve feel (scaled by UFO agility)
   const centrifugalPush = -frame.curvature * racer.speed * 0.14;
-  const steerForce = input.steer * C.steerAccel;
+  const steerForce = input.steer * C.steerAccel * spec.steerMult;
   racer.lateralVel += (steerForce + centrifugalPush) * dt;
-  const isDashing = racer.dashCooldown > (isFree ? 0.27 : 0.48);
+  const dashBaseCd = (isFree ? 0.45 : C.dashCooldownDuration) * spec.dashCooldownMult;
+  const isDashing = racer.dashCooldown > Math.max(0.15, dashBaseCd - 0.2);
   const activeDrag = isDashing
     ? C.lateralDrag * 0.42
     : Math.abs(input.steer) < 0.05
@@ -611,6 +625,68 @@ export function stepRacerPhysics(
         racer.squashY = 1.28;
         events.push({
           type: 'ramp-launch',
+          racerId: racer.id,
+          isPlayer: racer.isPlayer,
+          worldX: racer.worldX,
+          worldY: racer.worldY,
+          worldZ: racer.worldZ,
+          intensity: 1.0,
+        });
+        break;
+      }
+    }
+  }
+
+  // Gravity Updraft Geysers — swirling vertical vortex columns lifting UFOs into high sky rings!
+  if (racer.updraftCooldown <= 0 && track.def.updrafts.length > 0) {
+    for (const updraft of track.def.updrafts) {
+      const distMeters = Math.abs(shortestProgressDelta(racer.t, updraft.t)) * track.totalLength;
+      if (
+        distMeters < updraft.radius * 1.15 &&
+        Math.abs(racer.lateral - updraft.lateral) < updraft.radius * 1.15
+      ) {
+        racer.vy = Math.max(racer.vy, updraft.liftVel * (isFree ? 1.12 : 1.0) * spec.hopMult);
+        racer.updraftCooldown = 1.1;
+        racer.boostEnergy = Math.min(100, racer.boostEnergy + 18);
+        if (racer.isPlayer) {
+          racer.styleScore += 120;
+        }
+        racer.squashX = 0.84;
+        racer.squashY = 1.26;
+        events.push({
+          type: 'updraft-lift',
+          racerId: racer.id,
+          isPlayer: racer.isPlayer,
+          worldX: racer.worldX,
+          worldY: racer.worldY,
+          worldZ: racer.worldZ,
+          intensity: 0.95,
+        });
+        break;
+      }
+    }
+  }
+
+  // Hyper-Warp Speed Tunnels — concentric glowing arch rings surging speed & recharging plasma!
+  if (racer.warpCooldown <= 0 && track.def.warpTunnels.length > 0) {
+    for (const tunnel of track.def.warpTunnels) {
+      const insideTunnel =
+        tunnel.tStart <= tunnel.tEnd
+          ? racer.t >= tunnel.tStart && racer.t <= tunnel.tEnd
+          : racer.t >= tunnel.tStart || racer.t <= tunnel.tEnd;
+      if (insideTunnel) {
+        racer.warpCooldown = 2.2;
+        racer.boostPadTimer = Math.max(racer.boostPadTimer, 1.65);
+        racer.boostEnergy = Math.min(100, racer.boostEnergy + 35);
+        const surgeTarget =
+          baseCap +
+          (racer.isPlayer ? tunnel.speedBonus : tunnel.speedBonus * 0.58) * speedClass;
+        racer.speed = Math.max(racer.speed + (racer.isPlayer ? 16 : 9), surgeTarget);
+        if (racer.isPlayer) {
+          racer.styleScore += 200;
+        }
+        events.push({
+          type: 'warp-surge',
           racerId: racer.id,
           isPlayer: racer.isPlayer,
           worldX: racer.worldX,
@@ -795,8 +871,10 @@ export function resolveRacerCollisions(
         const halfTrackA = sampleTrackFrame(track, a.t).width * 0.5 - 1.9;
         const halfTrackB = sampleTrackFrame(track, b.t).width * 0.5 - 1.9;
 
-        const massA = a.aiPolicy === 'bruiser' ? 1.35 : 1.0;
-        const massB = b.aiPolicy === 'bruiser' ? 1.35 : 1.0;
+        const specA = getUfoHandlingSpec(a.chassisVariant);
+        const specB = getUfoHandlingSpec(b.chassisVariant);
+        const massA = Math.max(specA.mass, a.aiPolicy === 'bruiser' ? 1.35 : specA.mass);
+        const massB = Math.max(specB.mass, b.aiPolicy === 'bruiser' ? 1.35 : specB.mass);
         const invSum = 1 / (massA + massB);
         const pushA = massB * invSum;
         const pushB = massA * invSum;

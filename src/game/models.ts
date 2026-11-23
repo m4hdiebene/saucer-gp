@@ -51,6 +51,26 @@ export interface CheckpointVisual {
   pillarMat: THREE.MeshStandardMaterial;
 }
 
+export interface UpdraftVisual {
+  group: THREE.Group;
+  spinColumn: THREE.Mesh;
+  rings: THREE.Mesh[];
+}
+
+export interface WarpTunnelVisual {
+  group: THREE.Group;
+  hoops: THREE.Mesh[];
+}
+
+export interface FloatingPropVisual {
+  mesh: THREE.Object3D;
+  baseY: number;
+  phase: number;
+  bobAmp: number;
+  bobSpeed: number;
+  rotSpeed: number;
+}
+
 export function createTrackTextures(
   biome: BiomeTheme,
   maxAnisotropy: number,
@@ -75,6 +95,16 @@ export function createTrackTextures(
           center: 'rgba(186, 230, 253, 0.72)',
           seam: 'rgba(8, 22, 38, 0.42)',
         }
+      : biome === 'biolume'
+      ? {
+          deck: '#0e2829',
+          curbA: '#34d399',
+          curbB: '#f472b6',
+          guide: '#2df9f2',
+          lane: 'rgba(167, 243, 208, 0.28)',
+          center: 'rgba(52, 211, 153, 0.75)',
+          seam: 'rgba(4, 20, 22, 0.5)',
+        }
       : biome === 'volcano'
       ? {
           deck: '#1e191d',
@@ -85,6 +115,16 @@ export function createTrackTextures(
           center: 'rgba(255, 138, 61, 0.68)',
           seam: 'rgba(12, 6, 8, 0.56)',
         }
+      : biome === 'cybercity'
+      ? {
+          deck: '#13162a',
+          curbA: '#ec4899',
+          curbB: '#22d3ee',
+          guide: '#38bdf8',
+          lane: 'rgba(244, 114, 182, 0.3)',
+          center: 'rgba(45, 249, 242, 0.78)',
+          seam: 'rgba(7, 8, 20, 0.55)',
+        }
       : biome === 'aether'
       ? {
           deck: '#2d374e',
@@ -94,6 +134,16 @@ export function createTrackTextures(
           lane: 'rgba(248, 250, 252, 0.34)',
           center: 'rgba(253, 224, 71, 0.72)',
           seam: 'rgba(18, 24, 38, 0.34)',
+        }
+      : biome === 'quantum'
+      ? {
+          deck: '#19122e',
+          curbA: '#fbbf24',
+          curbB: '#c084fc',
+          guide: '#2df9f2',
+          lane: 'rgba(216, 180, 254, 0.3)',
+          center: 'rgba(251, 191, 36, 0.8)',
+          seam: 'rgba(9, 6, 22, 0.54)',
         }
       : biome === 'nebula'
       ? {
@@ -126,7 +176,7 @@ export function createTrackTextures(
     ctx.fillRect(x, 0, 2, 512);
   }
 
-  // Biome-specific subtle surface detail
+  // Biome-specific surface detail
   if (biome === 'glacier') {
     ctx.strokeStyle = 'rgba(186, 230, 253, 0.14)';
     ctx.lineWidth = 2;
@@ -137,16 +187,47 @@ export function createTrackTextures(
       ctx.lineTo(466, y + 18);
       ctx.stroke();
     }
+  } else if (biome === 'biolume') {
+    // Organic glowing bioluminescent vein patterns along shoulders
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.28)';
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 8; i++) {
+      const y = i * 64;
+      ctx.beginPath();
+      ctx.moveTo(54, y);
+      ctx.quadraticCurveTo(96, y + 32, 62, y + 64);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(458, y);
+      ctx.quadraticCurveTo(416, y + 32, 450, y + 64);
+      ctx.stroke();
+    }
   } else if (biome === 'volcano') {
-    // Subtle glowing ember heat-vent strips along shoulders
+    // Glowing ember heat-vent strips along shoulders
     ctx.fillStyle = 'rgba(255, 92, 34, 0.24)';
     for (let y = 18; y < 512; y += 64) {
       ctx.fillRect(58, y, 16, 22);
       ctx.fillRect(438, y, 16, 22);
     }
-  } else if (biome === 'aether') {
-    // Subtle translucent sky-tile chevron weave
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+  } else if (biome === 'cybercity') {
+    // Circuit-board neon traces & tech grid tiles
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.18)';
+    ctx.lineWidth = 2;
+    for (let x = 88; x <= 424; x += 56) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, 512);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(236, 72, 153, 0.24)';
+    for (let y = 24; y < 512; y += 128) {
+      ctx.fillRect(62, y, 22, 14);
+      ctx.fillRect(428, y, 22, 14);
+    }
+  } else if (biome === 'aether' || biome === 'quantum') {
+    // Luminous geometric chevron weave
+    ctx.fillStyle =
+      biome === 'quantum' ? 'rgba(192, 132, 252, 0.12)' : 'rgba(255, 255, 255, 0.05)';
     for (let y = 0; y < 512; y += 128) {
       ctx.beginPath();
       ctx.moveTo(96, y + 64);
@@ -311,6 +392,85 @@ export function createTerrainTexture(
       ctx.fillRect(0, i * 26, 512, 12);
     }
     ctx.globalAlpha = 1;
+  } else if (biome === 'biolume') {
+    // Deep alien twilight moss floor with glowing bioluminescent river veins & spore rings
+    for (let i = 0; i < 28; i++) {
+      const cx = (i * 89) % 512;
+      const cy = (i * 137) % 512;
+      const grad = ctx.createRadialGradient(cx, cy, 4, cx, cy, 58);
+      grad.addColorStop(0, i % 3 === 0 ? 'rgba(52, 211, 153, 0.42)' : 'rgba(244, 114, 182, 0.28)');
+      grad.addColorStop(1, 'rgba(13, 59, 62, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 512, 512);
+    }
+    ctx.strokeStyle = 'rgba(45, 249, 242, 0.35)';
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 10; i++) {
+      const sx = (i * 61) % 512;
+      ctx.beginPath();
+      ctx.moveTo(sx, 0);
+      ctx.bezierCurveTo(sx + 65, 170, sx - 55, 340, sx + 25, 512);
+      ctx.stroke();
+    }
+  } else if (biome === 'cybercity') {
+    // Illuminated midnight metropolis grid streets & glowing cyan/magenta avenues
+    ctx.fillStyle = '#0d1022';
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
+    ctx.lineWidth = 3;
+    for (let g = 0; g < 512; g += 64) {
+      ctx.beginPath();
+      ctx.moveTo(g, 0);
+      ctx.lineTo(g, 512);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, g);
+      ctx.lineTo(512, g);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(236, 72, 153, 0.42)';
+    ctx.lineWidth = 5;
+    for (let g = 32; g < 512; g += 128) {
+      ctx.beginPath();
+      ctx.moveTo(g, 0);
+      ctx.lineTo(g, 512);
+      ctx.stroke();
+    }
+    for (let i = 0; i < 48; i++) {
+      const bx = ((i * 73) % 8) * 64 + 12;
+      const by = ((i * 41) % 8) * 64 + 12;
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(45, 249, 242, 0.22)' : 'rgba(251, 191, 36, 0.18)';
+      ctx.fillRect(bx, by, 38, 38);
+    }
+  } else if (biome === 'quantum') {
+    // Prismatic obsidian-indigo dimension floor with gold & violet crystalline lattice
+    ctx.fillStyle = '#140c2b';
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.strokeStyle = 'rgba(192, 132, 252, 0.34)';
+    ctx.lineWidth = 2.5;
+    for (let i = -512; i < 1024; i += 64) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i + 512, 512);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(i, 512);
+      ctx.lineTo(i + 512, 0);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.45)';
+    ctx.lineWidth = 3;
+    for (let y = 64; y < 512; y += 128) {
+      for (let x = 64; x < 512; x += 128) {
+        ctx.beginPath();
+        ctx.moveTo(x, y - 28);
+        ctx.lineTo(x + 28, y);
+        ctx.lineTo(x, y + 28);
+        ctx.lineTo(x - 28, y);
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
   } else {
     // Layered desert sandstone / twilight strata & wind-carved streaks
     for (let i = 0; i < 36; i++) {
@@ -332,7 +492,7 @@ export function createTerrainTexture(
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(22, 22);
+  tex.repeat.set(30, 30);
   tex.anisotropy = maxAnisotropy;
   return tex;
 }
@@ -497,6 +657,114 @@ function createUfoHullTextures(
     ctx.beginPath();
     ctx.arc(cx, cy, 148, 0, Math.PI * 2);
     ctx.stroke();
+  } else if (config.chassisVariant === 'cryo-prism') {
+    // Faceted ice-crystal geometric hexagon stripes & frost-cyan core bands
+    ctx.strokeStyle = trimCss;
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const px = cx + Math.cos(a) * 195;
+      const py = cy + Math.sin(a) * 195;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.strokeStyle = glowCss;
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * 100, cy + Math.sin(a) * 100);
+      ctx.lineTo(cx + Math.cos(a) * 238, cy + Math.sin(a) * 238);
+      ctx.stroke();
+    }
+  } else if (config.chassisVariant === 'spore-jelly') {
+    // Organic bioluminescent spotted dome & radial plasma veins
+    ctx.strokeStyle = glowCss;
+    ctx.lineWidth = 6;
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * 90, cy + Math.sin(a) * 90);
+      ctx.lineTo(cx + Math.cos(a) * 228, cy + Math.sin(a) * 228);
+      ctx.stroke();
+      ctx.fillStyle = trimCss;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a + 0.31) * 176, cy + Math.sin(a + 0.31) * 176, 12, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (config.chassisVariant === 'tri-orbiter') {
+    // Triple-axis delta emblem stripes converging on central cockpit
+    ctx.strokeStyle = trimCss;
+    ctx.lineWidth = 16;
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a) * 238, cy + Math.sin(a) * 238);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = glowCss;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 166, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (config.chassisVariant === 'magma-forge') {
+    // Heavy volcanic armor plates & molten glowing fissure ribs
+    ctx.fillStyle = '#181216';
+    ctx.fillRect(cx - 190, cy - 30, 380, 60);
+    ctx.strokeStyle = trimCss;
+    ctx.lineWidth = 12;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 186, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = glowCss;
+    ctx.lineWidth = 6;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + 0.25;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * 124, cy + Math.sin(a) * 124);
+      ctx.lineTo(cx + Math.cos(a) * 236, cy + Math.sin(a) * 236);
+      ctx.stroke();
+    }
+  } else if (config.chassisVariant === 'cyber-spinner') {
+    // Sleek neon cyberpunk circuit lines & split laser chevrons
+    ctx.strokeStyle = trimCss;
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.moveTo(cx - 120, 40);
+    ctx.lineTo(cx, 120);
+    ctx.lineTo(cx + 120, 40);
+    ctx.stroke();
+    ctx.strokeStyle = glowCss;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 168, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 206, 0.4, Math.PI - 0.4);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 206, Math.PI + 0.4, Math.PI * 2 - 0.4);
+    ctx.stroke();
+  } else if (config.chassisVariant === 'quantum-seraph') {
+    // Master-class celestial golden sunburst & violet quantum filigree
+    ctx.strokeStyle = trimCss;
+    ctx.lineWidth = 10;
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * 108, cy + Math.sin(a) * 108);
+      ctx.lineTo(cx + Math.cos(a) * 238, cy + Math.sin(a) * 238);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = glowCss;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 174, 0, Math.PI * 2);
+    ctx.stroke();
   } else {
     // Drift-halo: sleek ultraviolet split-ring arcs & rose-gold geometric inlays
     ctx.strokeStyle = trimCss;
@@ -653,7 +921,7 @@ export function createStartLineTexture(maxAnisotropy: number): THREE.CanvasTextu
  * Builds a sky gradient dome that matches the circuit horizon & fog color seamlessly.
  */
 export function buildSkyDome(topColorHex: string, horizonColorHex: string): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(920, 28, 18);
+  const geo = new THREE.SphereGeometry(1850, 28, 18);
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
   const topCol = new THREE.Color(topColorHex);
@@ -663,7 +931,7 @@ export function buildSkyDome(topColorHex: string, horizonColorHex: string): THRE
 
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i);
-    const h = THREE.MathUtils.clamp(y / 520, 0, 1);
+    const h = THREE.MathUtils.clamp(y / 960, 0, 1);
     if (h < 0.32) {
       tmp.copy(horCol).lerp(midCol, h / 0.32);
     } else {
@@ -1278,6 +1546,301 @@ export function buildUfoModel(
       { x: -0.84, y: 0.08, z: -1.98, scale: 1.02 },
       { x: 0.84, y: 0.08, z: -1.98, scale: 1.02 },
     );
+  } else if (config.chassisVariant === 'cryo-prism') {
+    // CRYO PRISM: Hexagonal faceted ice-crystal outer armor crown, 6 orbiting ice shards on spinRing,
+    // twin crystalline tail spires & twin frost plasma thrusters!
+    const iceCrystalMat = new THREE.MeshPhysicalMaterial({
+      color: 0xa5f3fc,
+      emissive: config.trimColor,
+      emissiveIntensity: 0.42,
+      roughness: 0.12,
+      metalness: 0.25,
+      clearcoat: 1.0,
+      flatShading: true,
+    });
+    const hexCrown = new THREE.Mesh(new THREE.TorusGeometry(2.58, 0.14, 6, 6), iceCrystalMat);
+    hexCrown.rotation.x = Math.PI / 2;
+    hexCrown.position.y = 0.14;
+    bodyGroup.add(hexCrown);
+
+    // 6 orbiting faceted crystal prisms attached to spinRing
+    const shardGeo = new THREE.OctahedronGeometry(0.36, 0);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const shard = new THREE.Mesh(shardGeo, i % 2 === 0 ? iceCrystalMat : glowMat);
+      shard.scale.set(0.75, 1.45, 0.75);
+      shard.position.set(Math.cos(a) * 2.86, 0.24, Math.sin(a) * 2.86);
+      shard.rotation.y = -a;
+      spinRing.add(shard);
+    }
+
+    // Swept crystalline ice tail-spire fins + forward diamond nose prow
+    const crystalSpireGeo = new THREE.ConeGeometry(0.28, 1.85, 5);
+    for (const side of [-1, 1]) {
+      const spire = new THREE.Mesh(crystalSpireGeo, iceCrystalMat);
+      spire.rotation.x = -Math.PI * 0.38;
+      spire.rotation.z = side * 0.28;
+      spire.position.set(side * 1.18, 0.62, -1.78);
+      bodyGroup.add(spire);
+    }
+    const noseCrystal = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.32, 6), iceCrystalMat);
+    noseCrystal.rotation.x = Math.PI / 2;
+    noseCrystal.scale.set(1.2, 1.0, 0.52);
+    noseCrystal.position.set(0, 0.16, 2.66);
+    bodyGroup.add(noseCrystal);
+
+    thrusterPositions.push(
+      { x: -0.92, y: 0.08, z: -2.02, scale: 1.04 },
+      { x: 0.92, y: 0.08, z: -2.02, scale: 1.04 },
+    );
+  } else if (config.chassisVariant === 'spore-jelly') {
+    // BIO JELLYCRAFT: Bioluminescent translucent outer bell fairing + 6 trailing curved aero-tendrils
+    // + glowing ring bulbs for unmistakable alien organic silhouette!
+    const bioBellMat = new THREE.MeshPhysicalMaterial({
+      color: config.trimColor,
+      emissive: config.glowColor,
+      emissiveIntensity: 0.35,
+      roughness: 0.16,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.62,
+      clearcoat: 1.0,
+      depthWrite: false,
+    });
+    const outerBell = new THREE.Mesh(
+      new THREE.SphereGeometry(2.58, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.42),
+      bioBellMat,
+    );
+    outerBell.scale.set(1.04, 0.44, 1.04);
+    outerBell.position.y = 0.04;
+    outerBell.renderOrder = 3;
+    bodyGroup.add(outerBell);
+
+    // 8 luminous spore-petal bulbs orbiting the outer bell rim
+    const bulbGeo = new THREE.SphereGeometry(0.2, 10, 8);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const bulb = new THREE.Mesh(bulbGeo, glowMat);
+      bulb.position.set(Math.cos(a) * 2.68, 0.06, Math.sin(a) * 2.68);
+      spinRing.add(bulb);
+    }
+
+    // 6 graceful trailing bioluminescent aero-tendrils streaming aft
+    for (let i = 0; i < 6; i++) {
+      const offsetX = (i - 2.5) * 0.62;
+      const curve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(offsetX, 0.16, -1.7),
+        new THREE.Vector3(offsetX * 1.12, 0.02 + (i % 2) * 0.18, -2.75),
+        new THREE.Vector3(offsetX * 0.88, -0.14 + ((i + 1) % 2) * 0.22, -3.75),
+      ]);
+      const tendrilGeo = new THREE.TubeGeometry(curve, 12, i === 2 || i === 3 ? 0.095 : 0.072, 6, false);
+      const tendril = new THREE.Mesh(tendrilGeo, i % 2 === 0 ? glowMat : accentTrimMat);
+      bodyGroup.add(tendril);
+    }
+
+    thrusterPositions.push(
+      { x: -0.82, y: 0.08, z: -1.96, scale: 0.96 },
+      { x: 0.82, y: 0.08, z: -1.96, scale: 0.96 },
+    );
+  } else if (config.chassisVariant === 'tri-orbiter') {
+    // TRI-ORBITER: Iconic 3-pod triangular delta mothership! Three distinct satellite mini-saucers
+    // (1 forward apex pod + 2 wide aft wing pods) bridged by illuminated delta trusses!
+    const podOffsets: Array<[number, number]> = [
+      [0, 2.35],
+      [-2.18, -1.48],
+      [2.18, -1.48],
+    ];
+    const miniHullGeo = new THREE.CylinderGeometry(0.72, 0.92, 0.26, 16);
+    const miniDomeGeo = new THREE.SphereGeometry(0.46, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    const miniRingGeo = new THREE.TorusGeometry(0.95, 0.07, 8, 20);
+
+    for (const [px, pz] of podOffsets) {
+      const pod = new THREE.Group();
+      pod.position.set(px, 0.14, pz);
+
+      const disc = new THREE.Mesh(miniHullGeo, hullSolidMat);
+      const dome = new THREE.Mesh(miniDomeGeo, accentTrimMat);
+      dome.position.y = 0.12;
+      const ring = new THREE.Mesh(miniRingGeo, glowMat);
+      ring.rotation.x = Math.PI / 2;
+      pod.add(disc, dome, ring);
+      bodyGroup.add(pod);
+
+      // Connecting structural truss strut from main hull to satellite pod
+      const dist = Math.hypot(px, pz);
+      const strut = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.16, dist), carbonMat);
+      strut.position.set(px * 0.5, 0.14, pz * 0.5);
+      strut.rotation.y = Math.atan2(px, pz);
+      bodyGroup.add(strut);
+    }
+
+    // Perimeter triangular glowing energy bars joining the 3 pods
+    for (let i = 0; i < 3; i++) {
+      const [x1, z1] = podOffsets[i];
+      const [x2, z2] = podOffsets[(i + 1) % 3];
+      const dx = x2 - x1;
+      const dz = z2 - z1;
+      const len = Math.hypot(dx, dz);
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, len), accentTrimMat);
+      bar.position.set((x1 + x2) * 0.5, 0.18, (z1 + z2) * 0.5);
+      bar.rotation.y = Math.atan2(dx, dz);
+      bodyGroup.add(bar);
+    }
+
+    thrusterPositions.push(
+      { x: -2.18, y: 0.12, z: -2.04, scale: 0.96 },
+      { x: 0, y: 0.12, z: -2.06, scale: 1.12 },
+      { x: 2.18, y: 0.12, z: -2.04, scale: 0.96 },
+    );
+  } else if (config.chassisVariant === 'magma-forge') {
+    // MAGMA FORGE: Heavy armored obsidian dreadnought with twin glowing molten furnace side nacelles,
+    // angular front ram shields, dorsal reactor grille & quad thermal thrusters!
+    const furnaceMat = new THREE.MeshStandardMaterial({
+      color: 0xff6b2b,
+      emissive: 0xff4500,
+      emissiveIntensity: 1.9,
+      roughness: 0.25,
+      metalness: 0.3,
+    });
+    const nacelleArmorGeo = new THREE.BoxGeometry(0.76, 0.52, 2.55);
+    const frontShieldGeo = new THREE.BoxGeometry(0.95, 0.36, 0.42);
+    for (const side of [-1, 1]) {
+      const armor = new THREE.Mesh(nacelleArmorGeo, carbonMat);
+      armor.position.set(side * 2.28, 0.24, -0.2);
+      armor.rotation.z = -side * 0.12;
+      bodyGroup.add(armor);
+
+      // Glowing magma furnace core grille inside side armor
+      const furnaceCore = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.22, 1.85), furnaceMat);
+      furnaceCore.position.set(side * 2.28, 0.26, -0.18);
+      bodyGroup.add(furnaceCore);
+
+      // Front angular blast-shield prow plates
+      const shield = new THREE.Mesh(frontShieldGeo, accentTrimMat);
+      shield.position.set(side * 1.38, 0.18, 2.16);
+      shield.rotation.y = -side * 0.48;
+      bodyGroup.add(shield);
+
+      // Twin heavy rear exhaust stacks
+      const stack = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.55, 0.85), accentTrimMat);
+      stack.position.set(side * 1.56, 0.56, -1.78);
+      stack.rotation.z = side * 0.22;
+      bodyGroup.add(stack);
+    }
+    // Armored dorsal furnace spine
+    const dorsalForge = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.38, 1.65), carbonMat);
+    dorsalForge.position.set(0, 0.58, -1.54);
+    bodyGroup.add(dorsalForge);
+    const forgeVent = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.14, 1.2), furnaceMat);
+    forgeVent.position.set(0, 0.78, -1.54);
+    bodyGroup.add(forgeVent);
+
+    thrusterPositions.push(
+      { x: -1.44, y: 0.12, z: -1.96, scale: 0.94 },
+      { x: -0.58, y: 0.14, z: -2.06, scale: 0.96 },
+      { x: 0.58, y: 0.14, z: -2.06, scale: 0.96 },
+      { x: 1.44, y: 0.12, z: -1.96, scale: 0.94 },
+    );
+  } else if (config.chassisVariant === 'cyber-spinner') {
+    // CYBER STRIKER: Sleek neon stealth dart core surrounded by TWO opposing tilted holographic
+    // gyro rings (spinRing + tilted outer halo on innerRing) + razor cyber winglets!
+    const outerGyroMat = new THREE.MeshStandardMaterial({
+      color: config.trimColor,
+      emissive: config.trimColor,
+      emissiveIntensity: 1.6,
+      roughness: 0.16,
+      metalness: 0.5,
+    });
+    const gyroRingA = new THREE.Mesh(new THREE.TorusGeometry(2.82, 0.08, 8, 36), outerGyroMat);
+    gyroRingA.rotation.x = Math.PI / 2 + 0.22;
+    gyroRingA.position.y = 0.22;
+    spinRing.add(gyroRingA);
+
+    const gyroRingB = new THREE.Mesh(new THREE.TorusGeometry(2.64, 0.065, 8, 36), glowMat);
+    gyroRingB.rotation.x = Math.PI / 2 - 0.24;
+    gyroRingB.position.y = -0.18;
+    innerRing.add(gyroRingB);
+
+    // Razor swept forward cyber-dart fins + twin split rear blades
+    const dartWingGeo = createBeveledWingGeo(
+      [
+        [0, 0.6],
+        [1.42, -0.35],
+        [1.18, -0.95],
+        [0.08, -0.38],
+      ],
+      0.08,
+    );
+    for (const side of [-1, 1]) {
+      const wing = new THREE.Mesh(dartWingGeo, carbonMat);
+      wing.rotation.x = Math.PI / 2;
+      wing.scale.x = side;
+      wing.position.set(side * 1.68, 0.24, 0.45);
+      bodyGroup.add(wing);
+
+      const neonEdge = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 1.55), glowMat);
+      neonEdge.position.set(side * 1.45, 0.42, -1.68);
+      neonEdge.rotation.y = side * 0.26;
+      bodyGroup.add(neonEdge);
+    }
+
+    thrusterPositions.push(
+      { x: -0.88, y: 0.1, z: -2.0, scale: 1.05 },
+      { x: 0.88, y: 0.1, z: -2.0, scale: 1.05 },
+    );
+  } else if (config.chassisVariant === 'quantum-seraph') {
+    // QUANTUM SERAPH: Master-class apex UFO with a 6-petal rotating golden celestial lotus crown,
+    // 4 floating prismatic crystal satellites, elevated golden halo crest & triple plasma thrusters!
+    const goldMat = new THREE.MeshPhysicalMaterial({
+      color: 0xfbbf24,
+      emissive: 0xb45309,
+      emissiveIntensity: 0.45,
+      roughness: 0.18,
+      metalness: 0.9,
+      clearcoat: 1.0,
+    });
+    const petalGeo = createBeveledWingGeo(
+      [
+        [0, 0],
+        [0.42, 0.48],
+        [0.12, 1.25],
+        [-0.12, 1.25],
+        [-0.42, 0.48],
+      ],
+      0.07,
+    );
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const petal = new THREE.Mesh(petalGeo, i % 2 === 0 ? goldMat : glowMat);
+      petal.rotation.x = Math.PI / 2;
+      petal.rotation.z = -a + Math.PI / 2;
+      petal.position.set(Math.cos(a) * 2.55, 0.16, Math.sin(a) * 2.55);
+      spinRing.add(petal);
+    }
+
+    // 4 floating prismatic crystal satellites orbiting slightly above innerRing
+    const satGeo = new THREE.OctahedronGeometry(0.28, 0);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const sat = new THREE.Mesh(satGeo, glowMat);
+      sat.position.set(Math.cos(a) * 2.15, 0.56, Math.sin(a) * 2.15);
+      innerRing.add(sat);
+    }
+
+    // Elevated golden celestial halo arch framing the cockpit
+    const celestialArch = new THREE.Mesh(
+      new THREE.TorusGeometry(1.52, 0.085, 10, 28, Math.PI),
+      goldMat,
+    );
+    celestialArch.position.set(0, 0.55, -0.62);
+    celestialArch.rotation.x = -0.35;
+    bodyGroup.add(celestialArch);
+
+    thrusterPositions.push(
+      { x: -1.1, y: 0.1, z: -2.02, scale: 0.96 },
+      { x: 0, y: 0.14, z: -2.14, scale: 1.18 },
+      { x: 1.1, y: 0.1, z: -2.02, scale: 0.96 },
+    );
   } else {
     // LYRA-8 · DRIFT: Exotic twin floating outer halo arcs + triple swept tail crests
     const haloArcGeo = new THREE.TorusGeometry(2.74, 0.075, 8, 22, Math.PI * 0.62);
@@ -1571,10 +2134,16 @@ export function buildTrackMesh(
   const hullColor =
     biome === 'glacier'
       ? 0x2a4562
+      : biome === 'biolume'
+      ? 0x103638
       : biome === 'volcano'
       ? 0x2c1c20
+      : biome === 'cybercity'
+      ? 0x181c36
       : biome === 'aether'
       ? 0x455370
+      : biome === 'quantum'
+      ? 0x241744
       : biome === 'nebula'
       ? 0x2e254a
       : 0x3b3545;
@@ -1596,10 +2165,16 @@ export function buildTrackMesh(
   const railStyle =
     biome === 'glacier'
       ? { color: 0x7efcf7, emissive: 0x0ea5e9 }
+      : biome === 'biolume'
+      ? { color: 0x34d399, emissive: 0x10b981 }
       : biome === 'volcano'
       ? { color: 0xff8a3d, emissive: 0xff4500 }
+      : biome === 'cybercity'
+      ? { color: 0xf472b6, emissive: 0xec4899 }
       : biome === 'aether'
       ? { color: 0xfde047, emissive: 0xf59e0b }
+      : biome === 'quantum'
+      ? { color: 0xfbbf24, emissive: 0xa855f7 }
       : biome === 'nebula'
       ? { color: 0xe879f9, emissive: 0xa855f7 }
       : { color: 0xffb35c, emissive: 0xff7b29 };
@@ -1609,12 +2184,12 @@ export function buildTrackMesh(
   const railMat = new THREE.MeshStandardMaterial({
     color: railStyle.color,
     emissive: railStyle.emissive,
-    emissiveIntensity: 0.72,
+    emissiveIntensity: 0.78,
     roughness: 0.32,
     metalness: 0.6,
   });
-  const leftRail = new THREE.Mesh(new THREE.TubeGeometry(leftCurve, 200, 0.24, 6, true), railMat);
-  const rightRail = new THREE.Mesh(new THREE.TubeGeometry(rightCurve, 200, 0.24, 6, true), railMat);
+  const leftRail = new THREE.Mesh(new THREE.TubeGeometry(leftCurve, 320, 0.25, 6, true), railMat);
+  const rightRail = new THREE.Mesh(new THREE.TubeGeometry(rightCurve, 320, 0.25, 6, true), railMat);
   group.add(leftRail, rightRail);
 
   // Start / Finish checkered strip flush above deck (+0.05m with polygonOffset)
@@ -1646,32 +2221,66 @@ export function buildTrackMesh(
   );
   group.add(startStrip);
 
-  // Instanced support pillars anchoring the floating track into the terrain below
-  const pillarCount = 36;
-  const pillarGeo = new THREE.CylinderGeometry(1.4, 2.2, 54, 8);
+  // Instanced support pillars anchoring the floating track (with Figure-8 Overpass clearance check!)
+  const pillarCount = 60;
+  const pillarGeo = new THREE.CylinderGeometry(1.5, 2.5, 76, 8);
   const pillarColor =
     biome === 'glacier'
       ? 0x5f82a3
+      : biome === 'biolume'
+      ? 0x164e50
       : biome === 'volcano'
       ? 0x2c2023
+      : biome === 'cybercity'
+      ? 0x24294a
       : biome === 'aether'
       ? 0x7b8fb2
+      : biome === 'quantum'
+      ? 0x35225c
       : 0x5c4749;
   const pillarMat = new THREE.MeshStandardMaterial({
     color: pillarColor,
     roughness: 0.78,
-    metalness: 0.3,
+    metalness: 0.32,
   });
-  const pillars = new THREE.InstancedMesh(pillarGeo, pillarMat, pillarCount);
-  const dummy = new THREE.Object3D();
+
+  const validPillarFrames: Array<{ x: number; y: number; z: number; yaw: number }> = [];
   for (let i = 0; i < pillarCount; i++) {
-    const f = sampleTrackFrame(track, i / pillarCount);
-    dummy.position.set(f.pos.x, f.pos.y - 28.5, f.pos.z);
-    dummy.rotation.set(0, Math.atan2(f.tangent.x, f.tangent.z), 0);
+    const t = i / pillarCount;
+    const f = sampleTrackFrame(track, t);
+    // Check if another section of track passes underneath this point (3D Figure-8 Overpass!)
+    let blocksUnderpass = false;
+    if (track.def.hasOverpass) {
+      for (let k = 0; k < track.frames.length; k += 4) {
+        const g = track.frames[k];
+        const dtWrap = Math.min(Math.abs(g.t - t), 1 - Math.abs(g.t - t));
+        if (dtWrap < 0.08) continue;
+        const horizDist = Math.hypot(g.pos.x - f.pos.x, g.pos.z - f.pos.z);
+        if (horizDist < g.width * 0.5 + 8 && g.pos.y < f.pos.y - 3) {
+          blocksUnderpass = true;
+          break;
+        }
+      }
+    }
+    if (!blocksUnderpass) {
+      validPillarFrames.push({
+        x: f.pos.x,
+        y: f.pos.y - 39.5,
+        z: f.pos.z,
+        yaw: Math.atan2(f.tangent.x, f.tangent.z),
+      });
+    }
+  }
+
+  const pillars = new THREE.InstancedMesh(pillarGeo, pillarMat, Math.max(1, validPillarFrames.length));
+  const dummy = new THREE.Object3D();
+  validPillarFrames.forEach((pf, idx) => {
+    dummy.position.set(pf.x, pf.y, pf.z);
+    dummy.rotation.set(0, pf.yaw, 0);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
-    pillars.setMatrixAt(i, dummy.matrix);
-  }
+    pillars.setMatrixAt(idx, dummy.matrix);
+  });
   pillars.instanceMatrix.needsUpdate = true;
   pillars.computeBoundingSphere();
   group.add(pillars);
@@ -1690,14 +2299,39 @@ export function buildStartGantry(track: BakedTrack, isSoftwareGl: boolean): THRE
   const biome = track.def.biome;
 
   const bannerHex =
-    biome === 'volcano' ? 0xff9f1c : biome === 'aether' ? 0x38bdf8 : 0x2df9f2;
+    biome === 'volcano'
+      ? 0xff9f1c
+      : biome === 'biolume'
+      ? 0x34d399
+      : biome === 'cybercity'
+      ? 0xec4899
+      : biome === 'quantum'
+      ? 0xfbbf24
+      : biome === 'aether'
+      ? 0x38bdf8
+      : 0x2df9f2;
   const accentHex =
-    biome === 'glacier' ? 0x7efcf7 : biome === 'aether' ? 0xfde047 : 0xffa63d;
+    biome === 'glacier'
+      ? 0x7efcf7
+      : biome === 'biolume'
+      ? 0xf472b6
+      : biome === 'cybercity'
+      ? 0x22d3ee
+      : biome === 'quantum'
+      ? 0xc084fc
+      : biome === 'aether'
+      ? 0xfde047
+      : 0xffa63d;
 
   const towerMat = new THREE.MeshStandardMaterial({
-    color: biome === 'volcano' ? 0x3c2e32 : biome === 'aether' ? 0xf1f5f9 : 0xe6ddd3,
+    color:
+      biome === 'volcano' || biome === 'cybercity' || biome === 'quantum'
+        ? 0x2b2538
+        : biome === 'aether'
+        ? 0xf1f5f9
+        : 0xe6ddd3,
     roughness: 0.42,
-    metalness: 0.38,
+    metalness: 0.42,
   });
   const darkMetalMat = new THREE.MeshStandardMaterial({
     color: 0x262938,
@@ -1789,39 +2423,98 @@ export function buildStartGantry(track: BakedTrack, isSoftwareGl: boolean): THRE
  * (sandstone mesas, ice crystal spires, volcanic obsidian basalt + lava vents, sky-citadel pillars),
  * monumental spanning arches, rotating orbital skyway gates, and variable-width corner beacons.
  */
+function createSkyscraperTexture(maxAnisotropy: number): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#141933';
+  ctx.fillRect(0, 0, 256, 512);
+
+  for (let row = 0; row < 32; row++) {
+    for (let col = 0; col < 10; col++) {
+      const hash = (row * 31 + col * 17) % 13;
+      if (hash < 4) continue;
+      ctx.fillStyle =
+        hash === 4
+          ? '#ec4899'
+          : hash === 5
+          ? '#2df9f2'
+          : hash === 6
+          ? '#fbbf24'
+          : 'rgba(186, 230, 253, 0.72)';
+      ctx.fillRect(12 + col * 24, 8 + row * 15, 16, 8);
+    }
+  }
+  // Horizontal neon facade trim bands
+  ctx.fillStyle = '#22d3ee';
+  ctx.fillRect(0, 118, 256, 6);
+  ctx.fillStyle = '#ec4899';
+  ctx.fillRect(0, 310, 256, 6);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = maxAnisotropy;
+  return tex;
+}
+
+/**
+ * Builds planetary biome environment for all 8 massive worlds:
+ * heightfield terrain with Figure-8 overpass clearance, instanced landmarks (sandstone mesas,
+ * ice crystal spires, giant glowing alien mushrooms, sci-fi skyscrapers, volcanic basalt,
+ * sky-citadel pillars, quantum crystal obelisks), rotating gates, floating props, and corner beacons.
+ */
 export function buildCanyonEnvironment(
   track: BakedTrack,
   maxAnisotropy: number,
   isSoftwareGl: boolean,
-): { group: THREE.Group; rotatingGates: THREE.Group[] } {
+): {
+  group: THREE.Group;
+  rotatingGates: THREE.Group[];
+  floatingProps: FloatingPropVisual[];
+} {
   const env = new THREE.Group();
   const rotatingGates: THREE.Group[] = [];
+  const floatingProps: FloatingPropVisual[] = [];
   const biome = track.def.biome;
 
   const trackSamples = track.frames.filter((_, i) => i % 4 === 0);
+  // Overpass-safe nearestTrackInfo: tracks minimum trackY among all nearby segments so terrain
+  // NEVER rises through the lower deck of a 3D Figure-8 overpass!
   const nearestTrackInfo = (
     x: number,
     z: number,
   ): { dist: number; trackY: number; halfWidth: number } => {
     let minD2 = Infinity;
-    let ty = 8;
-    let hw = 18;
+    let lowestNearbyY = Infinity;
+    let closestY = 8;
+    let hw = 20;
     for (let i = 0; i < trackSamples.length; i++) {
       const f = trackSamples[i];
       const dx = x - f.pos.x;
       const dz = z - f.pos.z;
       const d2 = dx * dx + dz * dz;
+      const clearRad = f.width * 0.5 + 32;
+      if (d2 < clearRad * clearRad && f.pos.y < lowestNearbyY) {
+        lowestNearbyY = f.pos.y;
+      }
       if (d2 < minD2) {
         minD2 = d2;
-        ty = f.pos.y;
+        closestY = f.pos.y;
         hw = f.width * 0.5;
       }
     }
-    return { dist: Math.sqrt(minD2), trackY: ty, halfWidth: hw };
+    return {
+      dist: Math.sqrt(minD2),
+      trackY: lowestNearbyY < Infinity ? lowestNearbyY : closestY,
+      halfWidth: hw,
+    };
   };
 
-  // Expansive biome heightfield (extends to horizon fog, zero box walls)
-  const terrainGeo = new THREE.PlaneGeometry(1420, 1420, 76, 76);
+  // Massive planetary heightfield (2600m x 2600m extends cleanly to horizon fog)
+  const terrainGeo = new THREE.PlaneGeometry(2600, 2600, 92, 92);
   terrainGeo.rotateX(-Math.PI / 2);
   const pos = terrainGeo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
@@ -1830,22 +2523,28 @@ export function buildCanyonEnvironment(
     const { dist, trackY, halfWidth } = nearestTrackInfo(x, z);
 
     const rawNoise =
-      Math.sin(x * 0.014) * Math.cos(z * 0.013) * 14 +
-      Math.sin(x * 0.032 + z * 0.025) * 6;
-    const clearEdge = halfWidth + 14;
-    const mesaRamp = THREE.MathUtils.smoothstep(dist, clearEdge, clearEdge + 135);
-    const outerRim = THREE.MathUtils.smoothstep(Math.hypot(x - 60, z + 10), 270, 580) * 65;
+      Math.sin(x * 0.009) * Math.cos(z * 0.0085) * 18 +
+      Math.sin(x * 0.024 + z * 0.019) * 8;
+    const clearEdge = halfWidth + 16;
+    const mesaRamp = THREE.MathUtils.smoothstep(dist, clearEdge, clearEdge + 160);
+    const outerRim = THREE.MathUtils.smoothstep(Math.hypot(x, z), 540, 1060) * 88;
 
     let y =
-      biome === 'aether'
-        ? -26 + mesaRamp * (18 + rawNoise * 0.65) + outerRim * 0.45
+      biome === 'cybercity'
+        ? -26 + rawNoise * 0.15
+        : biome === 'quantum'
+        ? -30 + mesaRamp * (20 + rawNoise * 0.6) + outerRim * 0.5
+        : biome === 'aether'
+        ? -32 + mesaRamp * (22 + rawNoise * 0.65) + outerRim * 0.45
         : biome === 'volcano'
-        ? -14 + mesaRamp * (44 + rawNoise * 1.15) + outerRim * 1.1
-        : -12 + mesaRamp * (36 + rawNoise) + outerRim;
+        ? -16 + mesaRamp * (52 + rawNoise * 1.15) + outerRim * 1.15
+        : biome === 'biolume'
+        ? -18 + mesaRamp * (34 + rawNoise * 0.9) + outerRim * 0.78
+        : -14 + mesaRamp * (40 + rawNoise) + outerRim;
 
-    // Hard safety clearance beneath even the widest 54m sky-plaza road sections
-    if (dist < halfWidth + 22) {
-      y = Math.min(y, trackY - 9.0);
+    // Hard safety clearance beneath even the widest 58m sky-plaza & Figure-8 underpasses
+    if (dist < halfWidth + 26) {
+      y = Math.min(y, trackY - 9.5);
     }
     pos.setY(i, y);
   }
@@ -1860,145 +2559,406 @@ export function buildCanyonEnvironment(
   const terrainMat = new THREE.MeshStandardMaterial({
     color: 0xffffff,
     map: terrainTex,
-    roughness: biome === 'glacier' ? 0.42 : biome === 'aether' ? 0.95 : 0.88,
-    metalness: biome === 'glacier' ? 0.16 : 0.05,
-    emissive: biome === 'volcano' ? new THREE.Color(0x451208) : new THREE.Color(0x000000),
-    emissiveIntensity: biome === 'volcano' ? 0.55 : 0,
+    roughness: biome === 'glacier' || biome === 'cybercity' ? 0.4 : biome === 'aether' ? 0.95 : 0.86,
+    metalness: biome === 'cybercity' || biome === 'quantum' ? 0.25 : biome === 'glacier' ? 0.16 : 0.06,
+    emissive:
+      biome === 'volcano'
+        ? new THREE.Color(0x451208)
+        : biome === 'cybercity'
+        ? new THREE.Color(0x161436)
+        : biome === 'quantum'
+        ? new THREE.Color(0x1e1040)
+        : biome === 'biolume'
+        ? new THREE.Color(0x06292a)
+        : new THREE.Color(0x000000),
+    emissiveIntensity:
+      biome === 'volcano' ? 0.55 : biome === 'cybercity' || biome === 'quantum' || biome === 'biolume' ? 0.38 : 0,
   });
   const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
   terrainMesh.receiveShadow = !isSoftwareGl;
   env.add(terrainMesh);
 
-  // Biome-specific instanced sculptural monoliths / crystal spires / basalt peaks / sky pillars
-  const spireGeo =
-    biome === 'glacier'
-      ? new THREE.ConeGeometry(6.8, 44, 6)
-      : biome === 'volcano'
-      ? new THREE.CylinderGeometry(2.0, 9.2, 46, 6)
-      : biome === 'aether'
-      ? new THREE.CylinderGeometry(3.4, 4.4, 62, 8)
-      : new THREE.CylinderGeometry(3.2, 8.5, 34, 7);
-  spireGeo.translate(0, biome === 'aether' ? 31 : 20, 0);
-
-  const spireMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: biome === 'glacier' ? 0.24 : biome === 'aether' ? 0.36 : 0.86,
-    metalness: biome === 'glacier' ? 0.28 : biome === 'aether' ? 0.52 : 0.08,
-    flatShading: biome !== 'aether',
-    emissive: biome === 'glacier' ? new THREE.Color(0x0d4f78) : new THREE.Color(0x000000),
-    emissiveIntensity: biome === 'glacier' ? 0.22 : 0,
-  });
-
-  const spireTransforms: Array<{
-    x: number;
-    y: number;
-    z: number;
-    sx: number;
-    sy: number;
-    sz: number;
-    rot: number;
-    tint: THREE.Color;
-  }> = [];
-
-  const baseRock = new THREE.Color(
-    biome === 'glacier'
-      ? '#b8e8ff'
-      : biome === 'volcano'
-      ? '#2d2026'
-      : biome === 'aether'
-      ? '#dce8f8'
-      : track.def.terrainPrimary,
-  );
-  const accentRock = new THREE.Color(
-    biome === 'glacier'
-      ? '#38bdf8'
-      : biome === 'volcano'
-      ? '#5c261c'
-      : biome === 'aether'
-      ? '#fcd34d'
-      : track.def.terrainAccent,
-  );
-  const sunlitRock = new THREE.Color(
-    biome === 'glacier'
-      ? '#f0f9ff'
-      : biome === 'volcano'
-      ? '#ff6b2b'
-      : biome === 'aether'
-      ? '#ffffff'
-      : '#d98a5b',
-  );
-
-  let seed =
-    track.def.id === 'solar-canyon'
-      ? 1337
-      : track.def.id === 'glacier-spire'
-      ? 2828
-      : track.def.id === 'nebula-ridge'
-      ? 4242
-      : track.def.id === 'obsidian-caldera'
-      ? 6161
-      : 8989;
+  // Deterministic PRNG per circuit
+  const seedMap: Record<string, number> = {
+    'solar-canyon': 1337,
+    'glacier-spire': 2828,
+    'biolume-jungle': 3434,
+    'nebula-ridge': 4242,
+    'obsidian-caldera': 6161,
+    'neon-megacity': 7171,
+    'aether-ringway': 8989,
+    'quantum-prism': 9797,
+  };
+  let seed = seedMap[track.def.id] ?? 1337;
   const rand = () => {
     seed = (seed * 16807) % 2147483647;
     return (seed - 1) / 2147483646;
   };
 
-  for (let attempt = 0; attempt < 280 && spireTransforms.length < 72; attempt++) {
-    const angle = rand() * Math.PI * 2;
-    const radius = 58 + rand() * 370;
-    const x = 60 + Math.cos(angle) * radius;
-    const z = Math.sin(angle) * radius;
-    const { dist, halfWidth } = nearestTrackInfo(x, z);
-    if (dist < halfWidth + 28) continue;
+  const dummy = new THREE.Object3D();
 
-    const sx = biome === 'aether' ? 0.75 + rand() * 1.15 : 0.85 + rand() * 2.1;
-    const sy = 0.75 + rand() * 2.3;
-    const sz = biome === 'aether' ? 0.75 + rand() * 1.15 : 0.85 + rand() * 2.1;
-    const tint = baseRock
-      .clone()
-      .lerp(rand() > 0.55 ? sunlitRock : accentRock, rand() * (biome === 'volcano' ? 0.42 : 0.65));
+  // Creative Biome Landmarks!
+  if (biome === 'biolume') {
+    // Giant alien glowing mushroom trees (stalks + luminous domed caps) + floating jellyfish spores!
+    const stalkGeo = new THREE.CylinderGeometry(1.4, 2.8, 36, 8);
+    stalkGeo.translate(0, 18, 0);
+    const capGeo = new THREE.SphereGeometry(11.5, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    capGeo.scale(1, 0.52, 1);
 
-    spireTransforms.push({
-      x,
-      y: biome === 'aether' ? -30 : -14,
-      z,
-      sx,
-      sy,
-      sz,
-      rot: rand() * Math.PI * 2,
-      tint,
+    const stalkMat = new THREE.MeshStandardMaterial({
+      color: 0x164e54,
+      roughness: 0.72,
+      metalness: 0.1,
     });
+    const capMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: 0x10b981,
+      emissiveIntensity: 0.55,
+      roughness: 0.32,
+      metalness: 0.12,
+    });
+
+    const placements: Array<{ x: number; y: number; z: number; sx: number; sy: number; rot: number; tint: THREE.Color }> = [];
+    const capPalette = [new THREE.Color(0x34d399), new THREE.Color(0x2df9f2), new THREE.Color(0xf472b6), new THREE.Color(0xa78bfa)];
+    for (let attempt = 0; attempt < 420 && placements.length < 96; attempt++) {
+      const angle = rand() * Math.PI * 2;
+      const radius = 70 + rand() * 640;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const { dist, halfWidth } = nearestTrackInfo(x, z);
+      if (dist < halfWidth + 32) continue;
+      placements.push({
+        x,
+        y: -18,
+        z,
+        sx: 0.8 + rand() * 1.65,
+        sy: 0.85 + rand() * 2.1,
+        rot: rand() * Math.PI * 2,
+        tint: capPalette[Math.floor(rand() * capPalette.length)],
+      });
+    }
+
+    const stalkInst = new THREE.InstancedMesh(stalkGeo, stalkMat, placements.length);
+    const capInst = new THREE.InstancedMesh(capGeo, capMat, placements.length);
+    placements.forEach((p, idx) => {
+      dummy.position.set(p.x, p.y, p.z);
+      dummy.rotation.set(0, p.rot, 0);
+      dummy.scale.set(p.sx, p.sy, p.sx);
+      dummy.updateMatrix();
+      stalkInst.setMatrixAt(idx, dummy.matrix);
+
+      dummy.position.set(p.x, p.y + 34 * p.sy, p.z);
+      dummy.scale.set(p.sx * 1.12, p.sx * 1.12, p.sx * 1.12);
+      dummy.updateMatrix();
+      capInst.setMatrixAt(idx, dummy.matrix);
+      capInst.setColorAt(idx, p.tint);
+    });
+    stalkInst.instanceMatrix.needsUpdate = true;
+    capInst.instanceMatrix.needsUpdate = true;
+    if (capInst.instanceColor) capInst.instanceColor.needsUpdate = true;
+    env.add(stalkInst, capInst);
+
+    // Floating bobbing bioluminescent spore orbs framing the jungle canopy!
+    const sporeGeo = new THREE.SphereGeometry(2.6, 12, 10);
+    for (let i = 0; i < 20; i++) {
+      const f = sampleTrackFrame(track, (i + 0.35) / 20);
+      const side = i % 2 === 0 ? -1 : 1;
+      const off = f.width * 0.5 + 16 + rand() * 24;
+      const colHex = i % 3 === 0 ? 0x34d399 : i % 3 === 1 ? 0xf472b6 : 0x2df9f2;
+      const sporeMat = new THREE.MeshBasicMaterial({
+        color: colHex,
+        transparent: true,
+        opacity: 0.78,
+      });
+      const spore = new THREE.Mesh(sporeGeo, sporeMat);
+      const baseY = f.pos.y + 10 + rand() * 18;
+      spore.position.set(f.pos.x + f.right.x * off * side, baseY, f.pos.z + f.right.z * off * side);
+      env.add(spore);
+      floatingProps.push({
+        mesh: spore,
+        baseY,
+        phase: i * 0.9,
+        bobAmp: 2.2,
+        bobSpeed: 1.4 + (i % 3) * 0.3,
+        rotSpeed: 0.4,
+      });
+    }
+  } else if (biome === 'cybercity') {
+    // Towering illuminated sci-fi skyscrapers with glowing window facades & neon rooftop crowns!
+    const bldgGeo = new THREE.BoxGeometry(26, 130, 26);
+    bldgGeo.translate(0, 65, 0);
+    const bldgTex = createSkyscraperTexture(maxAnisotropy);
+    const bldgMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      map: bldgTex,
+      emissive: 0x38bdf8,
+      emissiveMap: bldgTex,
+      emissiveIntensity: 0.52,
+      roughness: 0.34,
+      metalness: 0.65,
+    });
+    const roofCapGeo = new THREE.BoxGeometry(27.5, 2.2, 27.5);
+    const roofCapMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+    const towers: Array<{ x: number; z: number; sx: number; sy: number; sz: number; rot: number; neon: THREE.Color }> = [];
+    const neonCols = [new THREE.Color(0xec4899), new THREE.Color(0x2df9f2), new THREE.Color(0xfbbf24), new THREE.Color(0xa855f7)];
+    for (let attempt = 0; attempt < 480 && towers.length < 110; attempt++) {
+      const angle = rand() * Math.PI * 2;
+      const radius = 64 + rand() * 680;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const { dist, halfWidth } = nearestTrackInfo(x, z);
+      if (dist < halfWidth + 32) continue;
+      towers.push({
+        x,
+        z,
+        sx: 0.72 + rand() * 1.45,
+        sy: 0.6 + rand() * 1.75,
+        sz: 0.72 + rand() * 1.45,
+        rot: Math.floor(rand() * 4) * (Math.PI / 2),
+        neon: neonCols[Math.floor(rand() * neonCols.length)],
+      });
+    }
+
+    const bldgInst = new THREE.InstancedMesh(bldgGeo, bldgMat, towers.length);
+    const roofInst = new THREE.InstancedMesh(roofCapGeo, roofCapMat, towers.length);
+    towers.forEach((tw, idx) => {
+      dummy.position.set(tw.x, -28, tw.z);
+      dummy.rotation.set(0, tw.rot, 0);
+      dummy.scale.set(tw.sx, tw.sy, tw.sz);
+      dummy.updateMatrix();
+      bldgInst.setMatrixAt(idx, dummy.matrix);
+
+      dummy.position.set(tw.x, -28 + 130 * tw.sy, tw.z);
+      dummy.scale.set(tw.sx, 1, tw.sz);
+      dummy.updateMatrix();
+      roofInst.setMatrixAt(idx, dummy.matrix);
+      roofInst.setColorAt(idx, tw.neon);
+    });
+    bldgInst.instanceMatrix.needsUpdate = true;
+    roofInst.instanceMatrix.needsUpdate = true;
+    if (roofInst.instanceColor) roofInst.instanceColor.needsUpdate = true;
+    env.add(bldgInst, roofInst);
+
+    // Monumental Holographic Sky-Billboard Arches straddling the Neon Expressway!
+    const billTs = [0.14, 0.36, 0.62, 0.84];
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x1e2238, roughness: 0.4, metalness: 0.8 });
+    billTs.forEach((bt, idx) => {
+      const f = sampleTrackFrame(track, bt);
+      const halfW = f.width * 0.5 + 4.5;
+      const arch = new THREE.Group();
+      for (const side of [-1, 1]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(2.4, 24, 2.4), frameMat);
+        leg.position.set(side * halfW, 11, 0);
+        arch.add(leg);
+      }
+      const holoCol = idx % 2 === 0 ? 0xec4899 : 0x2df9f2;
+      const signMat = new THREE.MeshBasicMaterial({
+        color: holoCol,
+        transparent: true,
+        opacity: 0.52,
+        side: THREE.DoubleSide,
+      });
+      const signBoard = new THREE.Mesh(new THREE.PlaneGeometry(halfW * 1.9, 6.2), signMat);
+      signBoard.position.set(0, 21.5, 0);
+      arch.add(signBoard);
+      const trimBar = new THREE.Mesh(
+        new THREE.BoxGeometry(halfW * 2 + 3, 1.0, 2.6),
+        new THREE.MeshBasicMaterial({ color: idx % 2 === 0 ? 0x2df9f2 : 0xfbbf24 }),
+      );
+      trimBar.position.set(0, 17.6, 0);
+      arch.add(trimBar);
+
+      const basis = new THREE.Matrix4().makeBasis(
+        new THREE.Vector3(f.right.x, f.right.y, f.right.z),
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(-f.tangent.x, -f.tangent.y, -f.tangent.z),
+      );
+      arch.quaternion.setFromRotationMatrix(basis);
+      arch.position.set(f.pos.x, f.pos.y, f.pos.z);
+      env.add(arch);
+    });
+  } else {
+    // Classic + Quantum sculpted instanced monoliths / crystal spires / basalt peaks / sky pillars
+    const spireGeo =
+      biome === 'glacier'
+        ? new THREE.ConeGeometry(8.5, 58, 6)
+        : biome === 'volcano'
+        ? new THREE.CylinderGeometry(2.4, 11.5, 58, 6)
+        : biome === 'aether'
+        ? new THREE.CylinderGeometry(3.8, 5.2, 80, 8)
+        : biome === 'quantum'
+        ? new THREE.OctahedronGeometry(14, 0)
+        : new THREE.CylinderGeometry(4.2, 11.2, 46, 7);
+    if (biome !== 'quantum') {
+      spireGeo.translate(0, biome === 'aether' ? 40 : 26, 0);
+    }
+
+    const spireMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: biome === 'glacier' || biome === 'quantum' ? 0.22 : biome === 'aether' ? 0.36 : 0.86,
+      metalness: biome === 'quantum' ? 0.65 : biome === 'glacier' ? 0.28 : biome === 'aether' ? 0.52 : 0.08,
+      flatShading: biome !== 'aether',
+      emissive:
+        biome === 'glacier'
+          ? new THREE.Color(0x0d4f78)
+          : biome === 'quantum'
+          ? new THREE.Color(0x4c1d95)
+          : new THREE.Color(0x000000),
+      emissiveIntensity: biome === 'quantum' ? 0.45 : biome === 'glacier' ? 0.22 : 0,
+    });
+
+    const spireTransforms: Array<{
+      x: number;
+      y: number;
+      z: number;
+      sx: number;
+      sy: number;
+      sz: number;
+      rot: number;
+      tint: THREE.Color;
+    }> = [];
+
+    const baseRock = new THREE.Color(
+      biome === 'glacier'
+        ? '#b8e8ff'
+        : biome === 'volcano'
+        ? '#2d2026'
+        : biome === 'aether'
+        ? '#dce8f8'
+        : biome === 'quantum'
+        ? '#4c1d95'
+        : track.def.terrainPrimary,
+    );
+    const accentRock = new THREE.Color(
+      biome === 'glacier'
+        ? '#38bdf8'
+        : biome === 'volcano'
+        ? '#5c261c'
+        : biome === 'aether'
+        ? '#fcd34d'
+        : biome === 'quantum'
+        ? '#2df9f2'
+        : track.def.terrainAccent,
+    );
+    const sunlitRock = new THREE.Color(
+      biome === 'glacier'
+        ? '#f0f9ff'
+        : biome === 'volcano'
+        ? '#ff6b2b'
+        : biome === 'aether'
+        ? '#ffffff'
+        : biome === 'quantum'
+        ? '#fbbf24'
+        : '#d98a5b',
+    );
+
+    for (let attempt = 0; attempt < 420 && spireTransforms.length < 104; attempt++) {
+      const angle = rand() * Math.PI * 2;
+      const radius = 72 + rand() * 680;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const { dist, halfWidth } = nearestTrackInfo(x, z);
+      if (dist < halfWidth + 32) continue;
+
+      const sx = biome === 'aether' ? 0.8 + rand() * 1.2 : 0.9 + rand() * 2.2;
+      const sy = biome === 'quantum' ? 1.4 + rand() * 2.6 : 0.8 + rand() * 2.4;
+      const sz = biome === 'aether' ? 0.8 + rand() * 1.2 : 0.9 + rand() * 2.2;
+      const tint = baseRock
+        .clone()
+        .lerp(rand() > 0.55 ? sunlitRock : accentRock, rand() * (biome === 'volcano' ? 0.42 : 0.7));
+
+      spireTransforms.push({
+        x,
+        y: biome === 'quantum' ? 12 + rand() * 54 : biome === 'aether' ? -34 : -16,
+        z,
+        sx,
+        sy,
+        sz,
+        rot: rand() * Math.PI * 2,
+        tint,
+      });
+    }
+
+    const spireInst = new THREE.InstancedMesh(spireGeo, spireMat, spireTransforms.length);
+    spireTransforms.forEach((st, idx) => {
+      dummy.position.set(st.x, st.y, st.z);
+      dummy.rotation.set(0, st.rot, 0);
+      dummy.scale.set(st.sx, st.sy, st.sz);
+      dummy.updateMatrix();
+      spireInst.setMatrixAt(idx, dummy.matrix);
+      spireInst.setColorAt(idx, st.tint);
+    });
+    spireInst.instanceMatrix.needsUpdate = true;
+    if (spireInst.instanceColor) spireInst.instanceColor.needsUpdate = true;
+    spireInst.computeBoundingSphere();
+    env.add(spireInst);
+
+    // Colossal floating rotating Quantum Prism crystals or Nebula Asteroid shards!
+    if (biome === 'quantum' || biome === 'nebula') {
+      const crystalGeo = new THREE.OctahedronGeometry(7.5, 0);
+      const ringGeo = new THREE.TorusGeometry(10.5, 0.48, 8, 24);
+      const count = biome === 'quantum' ? 16 : 12;
+      for (let i = 0; i < count; i++) {
+        const f = sampleTrackFrame(track, (i + 0.5) / count);
+        const side = i % 2 === 0 ? -1 : 1;
+        const off = f.width * 0.5 + 24 + rand() * 34;
+        const cluster = new THREE.Group();
+        const core = new THREE.Mesh(
+          crystalGeo,
+          new THREE.MeshStandardMaterial({
+            color: biome === 'quantum' ? (i % 2 === 0 ? 0xfbbf24 : 0x2df9f2) : 0x7c3aed,
+            emissive: biome === 'quantum' ? (i % 2 === 0 ? 0xd97706 : 0x06b6d4) : 0x4c1d95,
+            emissiveIntensity: 0.72,
+            roughness: 0.2,
+            metalness: 0.75,
+            flatShading: true,
+          }),
+        );
+        core.scale.set(1, 1.5, 1);
+        cluster.add(core);
+        if (biome === 'quantum') {
+          const halo = new THREE.Mesh(
+            ringGeo,
+            new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? 0xc084fc : 0xfbbf24 }),
+          );
+          halo.rotation.x = Math.PI / 3;
+          cluster.add(halo);
+        }
+        const baseY = f.pos.y + 14 + rand() * 24;
+        cluster.position.set(f.pos.x + f.right.x * off * side, baseY, f.pos.z + f.right.z * off * side);
+        env.add(cluster);
+        floatingProps.push({
+          mesh: cluster,
+          baseY,
+          phase: i * 1.1,
+          bobAmp: 2.8,
+          bobSpeed: 1.1 + (i % 3) * 0.25,
+          rotSpeed: 0.55 * (i % 2 === 0 ? 1 : -1),
+        });
+      }
+    }
   }
 
-  const spireInst = new THREE.InstancedMesh(spireGeo, spireMat, spireTransforms.length);
-  const dummy = new THREE.Object3D();
-  spireTransforms.forEach((st, idx) => {
-    dummy.position.set(st.x, st.y, st.z);
-    dummy.rotation.set(0, st.rot, 0);
-    dummy.scale.set(st.sx, st.sy, st.sz);
-    dummy.updateMatrix();
-    spireInst.setMatrixAt(idx, dummy.matrix);
-    spireInst.setColorAt(idx, st.tint);
-  });
-  spireInst.instanceMatrix.needsUpdate = true;
-  if (spireInst.instanceColor) spireInst.instanceColor.needsUpdate = true;
-  spireInst.computeBoundingSphere();
-  env.add(spireInst);
-
   // Monumental biome spanning arches OR rotating orbital skyway ring gates!
-  if (biome === 'aether' || biome === 'nebula') {
-    const gateTs = biome === 'aether' ? [0.16, 0.48, 0.78] : [0.22, 0.66];
+  if (biome === 'aether' || biome === 'nebula' || biome === 'quantum') {
+    const gateTs =
+      biome === 'quantum'
+        ? [0.16, 0.42, 0.66, 0.88]
+        : biome === 'aether'
+        ? [0.16, 0.48, 0.78]
+        : [0.22, 0.64];
     const outerRingMat = new THREE.MeshStandardMaterial({
-      color: biome === 'aether' ? 0xfbbf24 : 0xc084fc,
-      emissive: biome === 'aether' ? 0xd97706 : 0x7e22ce,
-      emissiveIntensity: 0.7,
-      roughness: 0.25,
-      metalness: 0.82,
+      color: biome === 'aether' || biome === 'quantum' ? 0xfbbf24 : 0xc084fc,
+      emissive: biome === 'aether' || biome === 'quantum' ? 0xd97706 : 0x7e22ce,
+      emissiveIntensity: 0.78,
+      roughness: 0.22,
+      metalness: 0.85,
     });
     const innerRingMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
       emissive: 0x2df9f2,
-      emissiveIntensity: 1.5,
+      emissiveIntensity: 1.6,
       roughness: 0.18,
       metalness: 0.4,
     });
@@ -2006,30 +2966,29 @@ export function buildCanyonEnvironment(
     for (const gateT of gateTs) {
       const f = sampleTrackFrame(track, gateT);
       const gateRoot = new THREE.Group();
-      const radius = f.width * 0.68 + 5.5;
+      const radius = f.width * 0.68 + 6.0;
 
       const spinGroup = new THREE.Group();
       const outerTorus = new THREE.Mesh(
-        new THREE.TorusGeometry(radius, 1.35, 8, 32),
+        new THREE.TorusGeometry(radius, 1.45, 8, 32),
         outerRingMat,
       );
       const innerTorus = new THREE.Mesh(
-        new THREE.TorusGeometry(radius - 2.1, 0.42, 8, 32),
+        new THREE.TorusGeometry(radius - 2.2, 0.45, 8, 32),
         innerRingMat,
       );
       spinGroup.add(outerTorus, innerTorus);
 
-      // 8 radial stabilizer fins around the rotating orbital gate
-      const finGeo = new THREE.BoxGeometry(1.6, 5.2, 1.4);
+      const finGeo = new THREE.BoxGeometry(1.7, 5.8, 1.5);
       for (let k = 0; k < 8; k++) {
         const a = (k / 8) * Math.PI * 2;
         const fin = new THREE.Mesh(finGeo, outerRingMat);
-        fin.position.set(Math.cos(a) * (radius + 2.2), Math.sin(a) * (radius + 2.2), 0);
+        fin.position.set(Math.cos(a) * (radius + 2.4), Math.sin(a) * (radius + 2.4), 0);
         fin.rotation.z = a + Math.PI / 2;
         spinGroup.add(fin);
       }
 
-      spinGroup.position.y = 4.0;
+      spinGroup.position.y = 4.2;
       gateRoot.add(spinGroup);
       rotatingGates.push(spinGroup);
 
@@ -2042,44 +3001,48 @@ export function buildCanyonEnvironment(
       gateRoot.position.set(f.pos.x, f.pos.y, f.pos.z);
       env.add(gateRoot);
     }
-  } else {
-    const archTs = [0.16, 0.65];
+  } else if (biome !== 'cybercity') {
+    const archTs = [0.16, 0.62];
     const archMat = new THREE.MeshStandardMaterial({
       color:
         biome === 'glacier'
           ? 0x7dd3fc
+          : biome === 'biolume'
+          ? 0x115e59
           : biome === 'volcano'
           ? 0x2b1d22
           : track.def.terrainPrimary,
-      roughness: biome === 'glacier' ? 0.25 : 0.86,
+      roughness: biome === 'glacier' ? 0.25 : 0.84,
       metalness: biome === 'glacier' ? 0.28 : 0.08,
       flatShading: true,
     });
-    const emberMat =
+    const rimMat =
       biome === 'volcano'
         ? new THREE.MeshBasicMaterial({ color: 0xff6b2b })
+        : biome === 'biolume'
+        ? new THREE.MeshBasicMaterial({ color: 0x34d399 })
         : null;
 
     for (const archT of archTs) {
       const f = sampleTrackFrame(track, archT);
       const archGroup = new THREE.Group();
-      const archRad = f.width * 0.82;
+      const archRad = f.width * 0.84;
       const archTorus = new THREE.Mesh(
-        new THREE.TorusGeometry(archRad, 3.8, 7, 18, Math.PI),
+        new THREE.TorusGeometry(archRad, 4.0, 7, 18, Math.PI),
         archMat,
       );
       archTorus.position.y = -3.0;
       archTorus.scale.set(1.15, 1.32, 1.25);
       archGroup.add(archTorus);
 
-      if (emberMat) {
-        const lavaRim = new THREE.Mesh(
-          new THREE.TorusGeometry(archRad - 2.6, 0.52, 6, 18, Math.PI),
-          emberMat,
+      if (rimMat) {
+        const glowRim = new THREE.Mesh(
+          new THREE.TorusGeometry(archRad - 2.8, 0.56, 6, 18, Math.PI),
+          rimMat,
         );
-        lavaRim.position.y = -3.0;
-        lavaRim.scale.set(1.15, 1.32, 1.25);
-        archGroup.add(lavaRim);
+        glowRim.position.y = -3.0;
+        glowRim.scale.set(1.15, 1.32, 1.25);
+        archGroup.add(glowRim);
       }
 
       const basis = new THREE.Matrix4().makeBasis(
@@ -2094,21 +3057,25 @@ export function buildCanyonEnvironment(
   }
 
   // Instanced trackside holographic corner-marker beacons aligned to live variable road widths
-  const beaconCount = 40;
-  const beaconGeo = new THREE.OctahedronGeometry(0.95, 0);
+  const beaconCount = 56;
+  const beaconGeo = new THREE.OctahedronGeometry(0.98, 0);
   const beaconColor =
     biome === 'glacier'
       ? { color: 0x7efcf7, emissive: 0x0ea5e9 }
+      : biome === 'biolume'
+      ? { color: 0x34d399, emissive: 0x10b981 }
       : biome === 'volcano'
       ? { color: 0xff9f1c, emissive: 0xff4500 }
-      : biome === 'aether'
+      : biome === 'cybercity'
+      ? { color: 0xf472b6, emissive: 0xec4899 }
+      : biome === 'aether' || biome === 'quantum'
       ? { color: 0xfde047, emissive: 0xf59e0b }
       : { color: 0xffd166, emissive: 0xff9f1c };
 
   const beaconMat = new THREE.MeshStandardMaterial({
     color: beaconColor.color,
     emissive: beaconColor.emissive,
-    emissiveIntensity: 1.4,
+    emissiveIntensity: 1.45,
     roughness: 0.25,
     metalness: 0.4,
   });
@@ -2132,7 +3099,7 @@ export function buildCanyonEnvironment(
   beacons.computeBoundingSphere();
   env.add(beacons);
 
-  return { group: env, rotatingGates };
+  return { group: env, rotatingGates, floatingProps };
 }
 
 export function buildBoostPads(track: BakedTrack, maxAnisotropy: number): THREE.Group {
@@ -2550,6 +3517,155 @@ export function buildShockHazards(
       baseLateral: hz.lateral,
       def: hz,
     });
+  }
+
+  return { group, visuals };
+}
+
+/**
+ * Builds Gravity Updraft Geysers: glowing swirling translucent vertical vortex columns
+ * with rising energy hoops and emitter floor rings that lift UFOs skyward!
+ */
+export function buildUpdrafts(track: BakedTrack): {
+  group: THREE.Group;
+  visuals: UpdraftVisual[];
+} {
+  const group = new THREE.Group();
+  const visuals: UpdraftVisual[] = [];
+  if (!track.def.updrafts.length) return { group, visuals };
+
+  const emitterMat = new THREE.MeshStandardMaterial({
+    color: 0x1e2538,
+    roughness: 0.45,
+    metalness: 0.75,
+  });
+
+  for (const ud of track.def.updrafts) {
+    const { pos, frame } = trackToWorld(track, ud.t, ud.lateral, 0.08);
+    const uGroup = new THREE.Group();
+
+    const baseRing = new THREE.Mesh(
+      new THREE.TorusGeometry(ud.radius * 0.85, 0.34, 8, 24),
+      emitterMat,
+    );
+    baseRing.rotation.x = Math.PI / 2;
+    uGroup.add(baseRing);
+
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: ud.colorHex,
+      transparent: true,
+      opacity: 0.22,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const spinColumn = new THREE.Mesh(
+      new THREE.CylinderGeometry(ud.radius * 0.95, ud.radius * 0.62, 22, 16, 1, true),
+      glowMat,
+    );
+    spinColumn.position.y = 11;
+    spinColumn.renderOrder = 3;
+    uGroup.add(spinColumn);
+
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: ud.colorHex,
+      transparent: true,
+      opacity: 0.75,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const rings: THREE.Mesh[] = [];
+    for (let k = 0; k < 3; k++) {
+      const hoop = new THREE.Mesh(
+        new THREE.TorusGeometry(ud.radius * (0.68 + k * 0.1), 0.18, 6, 20),
+        ringMat,
+      );
+      hoop.rotation.x = Math.PI / 2;
+      hoop.position.y = 2.5 + k * 6.5;
+      hoop.renderOrder = 4;
+      uGroup.add(hoop);
+      rings.push(hoop);
+    }
+
+    const basis = new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(frame.right.x, frame.right.y, frame.right.z),
+      new THREE.Vector3(frame.up.x, frame.up.y, frame.up.z),
+      new THREE.Vector3(-frame.tangent.x, -frame.tangent.y, -frame.tangent.z),
+    );
+    uGroup.quaternion.setFromRotationMatrix(basis);
+    uGroup.position.set(pos.x, pos.y, pos.z);
+    group.add(uGroup);
+    visuals.push({ group: uGroup, spinColumn, rings });
+  }
+
+  return { group, visuals };
+}
+
+/**
+ * Builds Hyper-Warp Speed Tunnels: sequences of concentric glowing neon arch rings
+ * framing high-speed stretches & overpasses that surge speed and recharge plasma boost!
+ */
+export function buildWarpTunnels(track: BakedTrack): {
+  group: THREE.Group;
+  visuals: WarpTunnelVisual[];
+} {
+  const group = new THREE.Group();
+  const visuals: WarpTunnelVisual[] = [];
+  if (!track.def.warpTunnels.length) return { group, visuals };
+
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0x1d2236,
+    roughness: 0.42,
+    metalness: 0.78,
+  });
+
+  for (const tunnel of track.def.warpTunnels) {
+    const tGroup = new THREE.Group();
+    const hoops: THREE.Mesh[] = [];
+    const neonMat = new THREE.MeshBasicMaterial({
+      color: tunnel.colorHex,
+      transparent: true,
+      opacity: 0.88,
+    });
+    const span =
+      tunnel.tEnd >= tunnel.tStart
+        ? tunnel.tEnd - tunnel.tStart
+        : 1 - tunnel.tStart + tunnel.tEnd;
+
+    for (let i = 0; i < tunnel.ringCount; i++) {
+      const frac = tunnel.ringCount > 1 ? i / (tunnel.ringCount - 1) : 0.5;
+      const t = (tunnel.tStart + span * frac) % 1;
+      const f = sampleTrackFrame(track, t);
+      const radius = f.width * 0.54;
+
+      const arch = new THREE.Group();
+      const outerFrame = new THREE.Mesh(
+        new THREE.TorusGeometry(radius, 0.75, 6, 18, Math.PI),
+        frameMat,
+      );
+      outerFrame.scale.set(1.0, 0.72, 1.0);
+      arch.add(outerFrame);
+
+      const innerNeon = new THREE.Mesh(
+        new THREE.TorusGeometry(radius - 0.9, 0.36, 8, 22, Math.PI),
+        neonMat,
+      );
+      innerNeon.scale.set(1.0, 0.72, 1.0);
+      arch.add(innerNeon);
+      hoops.push(innerNeon);
+
+      const basis = new THREE.Matrix4().makeBasis(
+        new THREE.Vector3(f.right.x, f.right.y, f.right.z),
+        new THREE.Vector3(f.up.x, f.up.y, f.up.z),
+        new THREE.Vector3(-f.tangent.x, -f.tangent.y, -f.tangent.z),
+      );
+      arch.quaternion.setFromRotationMatrix(basis);
+      arch.position.set(f.pos.x, f.pos.y, f.pos.z);
+      tGroup.add(arch);
+    }
+
+    group.add(tGroup);
+    visuals.push({ group: tGroup, hoops });
   }
 
   return { group, visuals };
